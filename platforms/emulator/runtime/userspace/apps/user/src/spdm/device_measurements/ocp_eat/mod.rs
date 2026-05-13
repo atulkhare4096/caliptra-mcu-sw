@@ -6,8 +6,6 @@ pub mod claims;
 
 pub use claims::init_target_env_claims;
 
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::certificate::KEY_LABEL_SIZE;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::signed_eat::SignedEat;
@@ -45,7 +43,6 @@ impl OcpEatManifest {
     }
 }
 
-#[async_trait]
 impl SpdmMeasurementValue for OcpEatManifest {
     async fn get_measurement_value(
         &mut self,

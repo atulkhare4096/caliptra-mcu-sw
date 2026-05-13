@@ -6,7 +6,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::evidence::pcr_quote::PcrQuote;
 use caliptra_mcu_spdm_lib::measurements::{
@@ -37,7 +36,6 @@ impl PcrQuoteManifest {
     }
 }
 
-#[async_trait]
 impl SpdmMeasurementValue for PcrQuoteManifest {
     async fn get_measurement_value(
         &mut self,

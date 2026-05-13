@@ -265,7 +265,6 @@ llvm-size $(find target/riscv32imc-unknown-none-elf/release/deps \
 | Async closures | 13,230 | 3,078 | −10,152 |
 | Debug fmt impls | 9,632 | 0 | −9,632 |
 | Codec monomorphizations | ~7,520 | ~3,818 | −3,702 |
-| Codec monomorphizations | ~7,520 | ~3,818 | −3,702 |
 | Drop glue | 980 | 274 | −706 |
 | Heap allocs/request | 3–4 | 1 | −2–3 |
 

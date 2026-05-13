@@ -1,9 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::tdisp::driver::{TdispDriver, TdispDriverResult};
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::tdisp::protocol::*;
 
@@ -46,7 +42,6 @@ impl TestTdispDriver {
     }
 }
 
-#[async_trait]
 impl TdispDriver for TestTdispDriver {
     async fn get_capabilities(
         &self,

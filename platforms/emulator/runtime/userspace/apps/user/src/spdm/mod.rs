@@ -15,7 +15,7 @@ use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_console::Console;
 use caliptra_mcu_libtock_platform::ErrorCode;
 use caliptra_mcu_spdm_lib::codec::MessageBuf;
-use caliptra_mcu_spdm_lib::context::{SpdmContext, MAX_SPDM_RESPONDER_BUF_SIZE};
+use caliptra_mcu_spdm_lib::context::{SpdmContext, SpdmProvider, MAX_SPDM_RESPONDER_BUF_SIZE};
 use caliptra_mcu_spdm_lib::error::SpdmError;
 use caliptra_mcu_spdm_lib::measurements::SpdmMeasurements;
 use caliptra_mcu_spdm_lib::protocol::*;
@@ -25,7 +25,26 @@ use caliptra_mcu_spdm_lib::transport::doe::DoeTransport;
 use caliptra_mcu_spdm_lib::transport::mctp::MctpTransport;
 use core::fmt::Write;
 use device_cert_store::{initialize_cert_store, SharedCertStore};
+use device_measurements::ocp_eat::OcpEatManifest;
+use device_measurements::pcr_quote::PcrQuoteManifest;
 use embassy_executor::Spawner;
+
+/// SpdmProvider for MCTP transport (OCP EAT measurements).
+struct MctpPlatform;
+impl SpdmProvider for MctpPlatform {
+    type Transport = MctpTransport;
+    type CertStore = SharedCertStore;
+    type Measurements = OcpEatManifest;
+}
+
+/// SpdmProvider for DOE transport (PCR Quote measurements).
+#[allow(dead_code)]
+struct DoePlatform;
+impl SpdmProvider for DoePlatform {
+    type Transport = DoeTransport;
+    type CertStore = SharedCertStore;
+    type Measurements = PcrQuoteManifest;
+}
 
 // Caliptra supported SPDM and Secure SPDM versions
 const SPDM_VERSIONS: &[SpdmVersion] = &[SpdmVersion::V12, SpdmVersion::V13];
@@ -116,7 +135,7 @@ async fn spdm_mctp_responder() {
     // Large message buffer provider — shared across MCTP and DOE transports.
     let large_msg_buf_provider = shared_large_msg_buf::SharedLargeMsgBuf::new();
 
-    let mut ctx = match SpdmContext::new(
+    let mut ctx: SpdmContext<'_, MctpPlatform> = match SpdmContext::new(
         SPDM_VERSIONS,
         SECURE_SPDM_VERSIONS,
         &mut mctp_spdm_transport,
@@ -241,7 +260,7 @@ async fn spdm_doe_responder() {
     // Large message buffer provider — shared across MCTP and DOE transports.
     let large_msg_buf_provider = shared_large_msg_buf::SharedLargeMsgBuf::new();
 
-    let mut ctx = match SpdmContext::new(
+    let mut ctx: SpdmContext<'_, DoePlatform> = match SpdmContext::new(
         SPDM_VERSIONS,
         SECURE_SPDM_VERSIONS,
         &mut doe_spdm_transport,

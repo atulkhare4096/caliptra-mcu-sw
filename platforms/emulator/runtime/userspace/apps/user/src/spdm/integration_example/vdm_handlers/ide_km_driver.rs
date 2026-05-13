@@ -1,9 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::ide_km::driver::{
     IdeDriver, IdeDriverError, IdeDriverResult,
 };
@@ -35,7 +31,6 @@ impl Default for TestIdeDriver {
     }
 }
 
-#[async_trait]
 impl IdeDriver for TestIdeDriver {
     fn port_config(&self, port_index: u8) -> IdeDriverResult<PortConfig> {
         // Test implementation - return a default config

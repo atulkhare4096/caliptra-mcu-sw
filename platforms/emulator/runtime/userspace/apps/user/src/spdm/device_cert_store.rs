@@ -1,13 +1,9 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
 use crate::spdm::cert_store::cert_chain::device::DeviceCertIndex;
 use crate::spdm::cert_store::cert_chain::CertChain;
 use crate::spdm::cert_store::DeviceCertStore;
 use crate::spdm::endorsement_certs::EndorsementCertChain;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 use caliptra_mcu_spdm_lib::cert_store::{CertStoreError, CertStoreResult, SpdmCertStore};
@@ -101,7 +97,6 @@ impl SharedCertStore {
     }
 }
 
-#[async_trait]
 impl SpdmCertStore for SharedCertStore {
     fn slot_count(&self) -> u8 {
         // Try to lock the shared certificate store and get the slot count.
