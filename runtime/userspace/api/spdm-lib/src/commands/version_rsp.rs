@@ -53,7 +53,6 @@ bitfield! {
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Immutable)]
 pub struct VersionNumberEntry(MSB0 [u8]);
-impl Debug;
 u8;
     pub update_ver, set_update_ver: 3, 0;
     pub alpha, set_alpha: 7, 4;

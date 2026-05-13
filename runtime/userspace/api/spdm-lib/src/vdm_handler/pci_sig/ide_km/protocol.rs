@@ -13,7 +13,6 @@ pub const IDE_STREAM_KEY_SIZE_DW: usize = 8;
 pub const IDE_STREAM_IV_SIZE_DW: usize = 2;
 pub const MAX_SELECTIVE_IDE_ADDR_ASSOC_BLOCK_COUNT: usize = 15;
 
-#[derive(Debug)]
 pub enum IdeKmCommand {
     Query = 0x00,
     QueryResp = 0x01,
@@ -74,7 +73,6 @@ impl CommonCodec for IdeKmHdr {}
 bitfield! {
     #[derive(Clone, Copy, FromBytes, IntoBytes, Immutable)]
     pub struct KeyInfo(u8);
-    impl Debug;
     pub key_set_bit, set_key_set_bit: 0;
     pub key_direction, set_key_direction: 1;
     reserved, _: 3, 2;
@@ -102,7 +100,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct IdeCapabilityReg(u32);
-    impl Debug;
     u8;
     pub link_ide_stream_supported, set_link_ide_stream_supported: 0,0;
     pub selective_ide_stream_supported, set_selective_ide_stream_supported: 1,1;
@@ -122,7 +119,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct IdeControlReg(u32);
-    impl Debug;
     u8;
     reserved1, _: 1,0;
     pub flow_through_ide_stream_enabled, set_flow_through_ide_stream_enabled: 2,2;
@@ -136,7 +132,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct LinkIdeStreamControlReg(u32);
-    impl Debug;
     u8;
     pub link_ide_stream_enable, set_link_ide_stream_enable: 0,0;
     reserved1, _: 1,1;
@@ -156,7 +151,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct LinkIdeStreamStatusReg(u32);
-    impl Debug;
     u8;
     pub link_ide_stream_state, set_link_ide_stream_state: 3,0;
     reserved, _: 31,4;
@@ -169,7 +163,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct SelectiveIdeStreamCapabilityReg(u32);
-    impl Debug;
     u8;
     pub num_addr_association_reg_blocks, set_num_addr_association_reg_blocks: 3,0;
     reserved, _: 31,4;
@@ -181,7 +174,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct SelectiveIdeStreamControlReg(u32);
-    impl Debug;
     u8;
     pub selective_ide_stream_enable, set_selective_ide_stream_enable: 0,0;
     reserved1, _: 1,1;
@@ -205,7 +197,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct SelectiveIdeStreamStatusReg(u32);
-    impl Debug;
     u8;
     pub selective_ide_stream_state, set_selective_ide_stream_state: 3,0;
     pub received_integrity_check_fail_msg, set_received_integrity_check_fail_msg: 31,4;
@@ -220,7 +211,6 @@ bitfield! {
 #[derive(Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct SelectiveIdeRidAssociationReg1(u32);
-    impl Debug;
     u8;
     reserved1, _: 7,0;
     u16;
@@ -235,7 +225,6 @@ bitfield! {
 #[derive(Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct SelectiveIdeRidAssociationReg2(u32);
-    impl Debug;
     u8;
     pub valid, set_valid: 0,0;
     reserved1, _: 7,1;
@@ -253,7 +242,6 @@ bitfield! {
 #[derive(Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
     pub struct IdeAddrAssociationReg1(u32);
-    impl Debug;
     u8;
     pub valid, set_valid: 0,0;
     reserved1, _: 7,1;
@@ -263,20 +251,20 @@ bitfield! {
 }
 
 // IDE Address Association Register 2
-#[derive(Debug, Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
+#[derive(Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
 pub struct IdeAddrAssociationReg2 {
     pub memory_limit_upper: u32,
 }
 
 // IDE Address Association Register 3
-#[derive(Debug, Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
+#[derive(Default, FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
 pub struct IdeAddrAssociationReg3 {
     pub memory_base_upper: u32,
 }
 
 /// IDE Port configuration
-#[derive(Debug, Default, FromBytes, IntoBytes, Immutable)]
+#[derive(Default, FromBytes, IntoBytes, Immutable)]
 #[repr(C, packed)]
 pub struct PortConfig {
     pub function_num: u8,
@@ -287,7 +275,7 @@ pub struct PortConfig {
 
 impl CommonCodec for PortConfig {}
 
-#[derive(Debug, IntoBytes, FromBytes, Immutable)]
+#[derive(IntoBytes, FromBytes, Immutable)]
 #[repr(C)]
 pub struct IdeRegBlock {
     pub ide_cap_reg: IdeCapabilityReg,
@@ -297,7 +285,7 @@ pub struct IdeRegBlock {
 impl CommonCodec for IdeRegBlock {}
 
 /// Link IDE Register Block
-#[derive(Debug, Clone, Copy, IntoBytes, FromBytes, Immutable)]
+#[derive(Clone, Copy, IntoBytes, FromBytes, Immutable)]
 #[repr(C)]
 pub struct LinkIdeStreamRegBlock {
     pub ctrl_reg: LinkIdeStreamControlReg,
@@ -305,7 +293,7 @@ pub struct LinkIdeStreamRegBlock {
 }
 impl CommonCodec for LinkIdeStreamRegBlock {}
 
-#[derive(Debug, Clone, Copy, IntoBytes, FromBytes, Immutable)]
+#[derive(Clone, Copy, IntoBytes, FromBytes, Immutable)]
 #[repr(C)]
 pub struct SelectiveIdeStreamRegBlock {
     pub capability_reg: SelectiveIdeStreamCapabilityReg,
@@ -382,7 +370,7 @@ impl Codec for SelectiveIdeStreamRegBlock {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, IntoBytes, FromBytes, Immutable)]
+#[derive(Default, Clone, Copy, IntoBytes, FromBytes, Immutable)]
 #[repr(C)]
 pub struct AddrAssociationRegBlock {
     pub reg1: IdeAddrAssociationReg1,

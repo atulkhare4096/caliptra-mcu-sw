@@ -144,7 +144,6 @@ impl<'a> From<&'a mut [u8]> for MessageBuf<'a> {
 }
 
 // Generic message buffer for message encoding and decoding
-#[derive(Debug)]
 pub struct MessageBuf<'a> {
     /// Message buffer
     buffer: &'a mut [u8],

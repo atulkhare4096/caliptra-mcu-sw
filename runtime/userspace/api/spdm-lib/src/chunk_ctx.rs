@@ -38,7 +38,7 @@ pub trait LargeMsgBufProvider {
 }
 
 /// Stores state and metadata for managing ongoing large message requests and responses.
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ChunkState {
     in_use: bool,
     handle: u8,

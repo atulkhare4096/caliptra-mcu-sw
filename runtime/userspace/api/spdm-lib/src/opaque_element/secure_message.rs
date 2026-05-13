@@ -31,7 +31,6 @@ impl Codec for SmOpaqueElementHdr {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct SmOpaqueElementDataHdr {
     sm_data_version: u8,
     sm_data_id: u8,
@@ -53,7 +52,6 @@ impl Codec for SmOpaqueElementDataHdr {
         })
     }
 }
-#[derive(Debug)]
 pub(crate) struct SmVersionList {
     pub version_count: u8,
     pub versions: [SmVersion; MAX_SEC_MSG_VERSION_COUNT],
@@ -110,7 +108,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
     #[repr(C)]
     pub struct SmVersion(u16);
-    impl Debug;
     u8;
     pub alpha, set_alpha: 3,0;
     pub update_version_number, set_update_version_number: 7,4;

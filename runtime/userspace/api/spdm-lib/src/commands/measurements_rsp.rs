@@ -42,7 +42,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct GetMeasurementsReqAttr(u8);
-    impl Debug;
     u8;
     pub signature_requested, _: 0, 0;
     pub raw_bitstream_requested, _: 1, 1;
@@ -54,7 +53,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct MeasurementsRspFixed([u8]);
-    impl Debug;
     u8;
     pub spdm_version, set_spdm_version: 7, 0;
     pub req_resp_code, set_req_resp_code: 15, 8;

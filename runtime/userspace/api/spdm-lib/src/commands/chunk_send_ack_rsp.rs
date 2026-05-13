@@ -38,7 +38,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
 struct ChunkSenderAttr(u8);
-impl Debug;
 u8;
 pub last_chunk, set_last_chunk: 0, 0;
 reserved, _: 7, 1;
@@ -48,7 +47,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct ChunkReceiverAttr(u8);
-impl Debug;
 u8;
 pub early_error_detected, set_early_error_detected: 0, 0;
 reserved, _: 7, 1;

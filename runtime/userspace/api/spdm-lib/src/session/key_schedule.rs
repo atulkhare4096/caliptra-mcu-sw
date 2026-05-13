@@ -29,7 +29,7 @@ pub enum KeyScheduleError {
 
 pub type KeyScheduleResult<T> = Result<T, KeyScheduleError>;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum SessionKeyType {
     RequestFinishedKey,
     ResponseFinishedKey,

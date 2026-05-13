@@ -16,7 +16,7 @@ const MAX_SPDM_REQUEST_LENGTH: u16 = 128;
 const MAX_SPDM_EXT_ALG_COUNT_V10: u8 = 8;
 const MAX_SPDM_EXT_ALG_COUNT_V11: u8 = 20;
 
-#[derive(IntoBytes, FromBytes, Immutable, Default, Debug)]
+#[derive(IntoBytes, FromBytes, Immutable, Default)]
 #[repr(C, packed)]
 struct NegotiateAlgorithmsReq {
     num_alg_struct_tables: u8,
@@ -100,7 +100,7 @@ struct ExtendedAlgo {
 
 impl CommonCodec for ExtendedAlgo {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum AlgType {
     Dhe = 2,
     AeadCipherSuite = 3,
@@ -125,7 +125,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
     #[repr(C)]
     pub struct AlgStructure(u32);
-    impl Debug;
     u8;
         pub alg_type, set_alg_type: 7, 0;
         pub ext_alg_count, set_ext_alg_count: 11, 8;

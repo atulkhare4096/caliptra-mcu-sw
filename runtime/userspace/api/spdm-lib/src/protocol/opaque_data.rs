@@ -121,7 +121,7 @@ impl OpaqueData {
     }
 }
 
-#[derive(FromBytes, IntoBytes, Immutable, Debug)]
+#[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct GeneralOpaqueDataHdr {
     pub total_elements: u8,
@@ -139,7 +139,6 @@ impl GeneralOpaqueDataHdr {
     }
 }
 
-#[derive(Debug)]
 pub struct OpaqueElementHdr {
     standards_body_id: u8,
     vendor_id_len: u8,

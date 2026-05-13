@@ -13,7 +13,6 @@ bitfield! {
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
 #[repr(C)]
 pub struct DmtfSpecMeasurementValueType(u8);
-    impl Debug;
     u8;
     meas_val_type, set_meas_val_type: 6, 0; // [6:0] - DMTFSpecMeasurementValueType
     meas_val_repr, set_meas_val_repr: 7, 7; // [7] - digest/raw bit stream

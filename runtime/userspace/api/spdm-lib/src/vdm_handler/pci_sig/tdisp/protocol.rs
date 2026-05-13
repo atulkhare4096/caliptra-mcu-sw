@@ -32,7 +32,7 @@ impl TdispVersion {
 }
 
 /// TdispCommand represents the request/response code for TDISP messages.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum TdispCommand {
     /// Request to get the TDISP version.
     GetTdispVersion = 0x81,
@@ -183,7 +183,7 @@ impl From<u32> for TdispError {
     }
 }
 
-#[derive(FromBytes, IntoBytes, Immutable, Default, Debug, Copy, Clone, PartialEq)]
+#[derive(FromBytes, IntoBytes, Immutable, Default, Copy, Clone, PartialEq)]
 #[repr(C, packed)]
 pub struct InterfaceId {
     pub function_id: FunctionId,
@@ -194,7 +194,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Copy, Clone, PartialEq)]
     #[repr(C)]
     pub struct FunctionId(u32);
-    impl Debug;
     u16;
     pub requester_id, set_requester_id: 15, 0; // Bits 15:0 Requester ID
     u8;
@@ -274,7 +273,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default)]
 #[repr(C)]
 pub struct TdispLockInterfaceFlags(u16);
-impl Debug;
 u8;
     pub no_fw_update, set_no_fw_update: 0, 0; // Bit 0 NO_FW_UPDATE
     pub system_cache_line_size, set_system_cache_line_size: 1, 1; // Bits 1:1 SYSTEM_CACHE_LINE_SIZE
@@ -305,7 +303,7 @@ pub struct GetDeviceIntfReportReq {
 
 impl CommonCodec for GetDeviceIntfReportReq {}
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum TdiStatus {
     ConfigUnlocked = 0,
     ConfigLocked = 1,
@@ -339,7 +337,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Copy, Clone, PartialEq)]
     #[repr(C)]
     pub struct InterfaceInfo(u16);
-    impl Debug;
     u8;
     pub fw_updates_permitted, set_fw_updates_permitted: 0, 0; // Bit 0 Firmware Updates Permitted
     pub dma_requests_without_pasid, set_dma_requests_without_pasid: 1, 1; // Bit 1- TDI generates DMA Requests Without PASID
@@ -362,7 +359,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Copy, Clone, PartialEq)]
     #[repr(C)]
     pub struct MmioRangeAttribute(u32);
-    impl Debug;
     u8;
     pub msix_table, set_msix_table: 0, 0; // Bit 0 : if the range maps MSI-X Table
     pub msix_pba, set_msix_pba: 1, 1; // Bit 1 : if the range maps MSI-X PBA

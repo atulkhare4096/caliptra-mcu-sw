@@ -7,7 +7,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const SPDM_NONCE_LEN: usize = 32;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ReqRespCode {
     GetVersion = 0x84,
     Version = 0x04,
@@ -126,7 +126,7 @@ impl SpdmMsgHdr {
 impl CommonCodec for SpdmMsgHdr {}
 
 // Requester context (used for SPDM 1.3 and later versions)
-#[derive(FromBytes, IntoBytes, Immutable, Debug)]
+#[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub(crate) struct RequesterContext([u8; REQUESTER_CONTEXT_LEN]);
 impl CommonCodec for RequesterContext {}

@@ -41,7 +41,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct ChunkSenderAttr(u8);
-impl Debug;
 u8;
 pub last_chunk, set_last_chunk: 0, 0;
 reserved, _: 7, 1;

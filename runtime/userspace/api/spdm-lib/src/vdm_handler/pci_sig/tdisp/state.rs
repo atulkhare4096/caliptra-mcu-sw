@@ -53,7 +53,7 @@ impl TdispState {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub(crate) struct TdispInterfaceState {
     interface_id: InterfaceId,
     start_interface_nonce: Option<[u8; START_INTERFACE_NONCE_SIZE]>,

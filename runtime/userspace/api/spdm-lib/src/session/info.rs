@@ -14,14 +14,13 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy, Default)]
     #[repr(C)]
     pub struct SessionPolicy(u8);
-    impl Debug;
     u8;
     pub termination_policy, _: 0, 0;
     pub event_all_policy, _: 1, 1;
     reserved, _: 7, 2;
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum SessionState {
     HandshakeNotStarted, // Before KEY_EXCHANGE and after END_SESSION
     HandshakeInProgress, // After KEY_EXCHANGE and before FINISH
@@ -30,7 +29,7 @@ pub(crate) enum SessionState {
     Terminating,         // When END_SESSION is received
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum SessionType {
     None,
     MacOnly,

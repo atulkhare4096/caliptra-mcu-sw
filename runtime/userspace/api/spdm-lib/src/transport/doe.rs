@@ -33,7 +33,6 @@ bitfield! {
     #[repr(C)]
     #[derive(Clone, FromBytes, IntoBytes, Immutable)]
     pub struct DoeHeader([u8]);
-    impl Debug;
     pub u16, vendor_id, set_vendor_id: 15, 0;
     pub u8, data_object_type, set_data_object_type: 23, 16;
     u8, reserved_1, _: 31, 24;

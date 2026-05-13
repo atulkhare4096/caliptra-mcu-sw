@@ -30,7 +30,6 @@ bitfield! {
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Immutable)]
 pub struct MctpMsgHdr(MSB0 [u8]);
-impl Debug;
 u8;
     pub ic, set_ic: 0,0;
     pub msg_type, set_msg_type: 7, 0;

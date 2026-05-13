@@ -9,7 +9,7 @@ pub const MIN_DATA_TRANSFER_SIZE_V12: u32 = 42;
 pub const MAX_CT_EXPONENT: u8 = 31;
 
 /// Measurements Capability
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum MeasCapability {
     NoMeasurement = 0,
     MeasurementsWithNoSignature = 1,
@@ -18,7 +18,7 @@ pub enum MeasCapability {
 }
 
 /// Pre-shared Key(PSK) Capability
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum PskCapability {
     // PSK capability not supported
     NoPsk = 0,
@@ -31,7 +31,7 @@ pub enum PskCapability {
 }
 
 /// Endpoint Information Capability
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) enum EpInfoCapability {
     NoEpInfo = 0,
@@ -41,7 +41,7 @@ pub(crate) enum EpInfoCapability {
 }
 
 /// Device Capabilities
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct DeviceCapabilities {
     pub ct_exponent: u8,
     pub flags: CapabilityFlags,
@@ -54,7 +54,6 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
 pub struct CapabilityFlags(u32);
-impl Debug;
 u8;
 pub cache_cap, set_cache_cap: 0, 0;
 pub cert_cap, set_cert_cap: 1, 1;

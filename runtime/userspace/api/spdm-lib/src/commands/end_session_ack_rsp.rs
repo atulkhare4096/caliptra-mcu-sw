@@ -14,13 +14,12 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct EndSessionReqAttr(u8);
-    impl Debug;
     u8;
     pub negotiated_state_cleaning_indicator, set_negotiated_state_cleaning_indicator: 0, 0;
     reserved, _: 7, 1;
 }
 
-#[derive(Debug, FromBytes, IntoBytes, Immutable)]
+#[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct EndSessionReq {
     req_attr: EndSessionReqAttr,
@@ -29,7 +28,7 @@ struct EndSessionReq {
 
 impl CommonCodec for EndSessionReq {}
 
-#[derive(Debug, FromBytes, IntoBytes, Immutable)]
+#[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct EndSessionAck {
     reserved1: u8,

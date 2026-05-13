@@ -21,7 +21,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct MutualAuthReqAttr(u8);
-    impl Debug;
     u8;
     pub no_encaps_request_flow, set_no_encaps_request_flow: 0, 0;
     pub encaps_request_flow, set_encaps_request_flow: 1, 1;

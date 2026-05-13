@@ -31,7 +31,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     pub struct SlotId(u8);
-    impl Debug;
     u8;
     pub slot_id, set_slot_id: 3,0;
     reserved, _: 7,4;
@@ -41,7 +40,6 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     pub struct CertificateReqAttributes(u8);
-    impl Debug;
     u8;
     pub slot_size_requested, set_slot_size_requested: 0,0;
     reserved, _: 7,1;
@@ -65,13 +63,12 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default)]
     #[repr(C)]
     pub struct CertificateRespAttributes(u8);
-    impl Debug;
     u8;
     pub certificate_info, set_certificate_info: 2,0;
     reserved, _: 7,3;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct CertificateResponse {
     spdm_version: SpdmVersion,
     slot_id: u8,
