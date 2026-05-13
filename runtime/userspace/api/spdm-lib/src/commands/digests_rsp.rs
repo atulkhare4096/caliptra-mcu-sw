@@ -208,6 +208,7 @@ async fn process_get_digests<'a, P: SpdmProvider>(
         .await
 }
 
+#[inline(never)]
 pub(crate) async fn handle_get_digests<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

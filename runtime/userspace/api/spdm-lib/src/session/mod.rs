@@ -19,7 +19,7 @@ pub(crate) use key_schedule::{KeySchedule, KeyScheduleError, SessionKeyType};
 pub const MAX_NUM_SESSIONS: usize = 1;
 const MAX_SPDM_AEAD_ASSOCIATED_DATA_SIZE: usize = 16; // Size of the associated data for AEAD
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum SessionError {
     SessionsLimitReached,
     InvalidSessionId,
@@ -32,6 +32,12 @@ pub enum SessionError {
     KeySchedule(KeyScheduleError),
     CaliptraApi(CaliptraApiError),
     Codec(CodecError),
+}
+
+impl core::fmt::Debug for SessionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("SessionError")
+    }
 }
 
 pub type SessionResult<T> = Result<T, SessionError>;

@@ -78,7 +78,7 @@ fn generate_end_session_response<P: SpdmProvider>(
     Ok(())
 }
 
-pub(crate) async fn handle_end_session<'a, P: SpdmProvider>(
+pub(crate) fn handle_end_session<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,

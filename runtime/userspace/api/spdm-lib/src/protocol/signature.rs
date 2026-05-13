@@ -12,12 +12,18 @@ pub const SPDM_SIGNING_CONTEXT_LEN: usize = SPDM_PREFIX_LEN + SPDM_CONTEXT_LEN;
 pub const SPDM_PREFIX_LEN: usize = 64;
 pub const SPDM_CONTEXT_LEN: usize = 36;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum SignCtxError {
     UnsupportedVersion,
     BufferTooSmall,
     InvalidSignCtxString,
     CaliptraApi(CaliptraApiError),
+}
+
+impl core::fmt::Debug for SignCtxError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("SignCtxError")
+    }
 }
 
 pub type SignatureCtxResult<T> = Result<T, SignCtxError>;

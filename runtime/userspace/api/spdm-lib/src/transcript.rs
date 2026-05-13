@@ -7,12 +7,18 @@ use arrayvec::ArrayVec;
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext, SHA384_HASH_SIZE};
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum TranscriptError {
     BufferOverflow,
     InvalidState,
     MissingSessionInfo,
     CaliptraApi(CaliptraApiError),
+}
+
+impl core::fmt::Debug for TranscriptError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("TranscriptError")
+    }
 }
 
 pub type TranscriptResult<T> = Result<T, TranscriptError>;
@@ -99,6 +105,20 @@ impl Transcript {
             TranscriptContext::M1 => self.hash_ctx_m1 = None,
             TranscriptContext::L1 => self.hash_ctx_l1 = None,
             _ => {}
+        }
+    }
+
+    /// Append data to a transcript context that is known to be synchronous
+    /// (Vca or Digests). Panics if called with an async context (M1, L1, Th).
+    pub fn append_sync(
+        &mut self,
+        context: TranscriptContext,
+        data: &[u8],
+    ) -> TranscriptResult<()> {
+        match context {
+            TranscriptContext::Vca => self.append_vca(data),
+            TranscriptContext::Digests => self.append_digests(data),
+            _ => panic!("append_sync called with async transcript context"),
         }
     }
 

@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+extern crate alloc;
+
 use crate::cert_store::*;
 use crate::chunk_ctx::{LargeMessageCtx, LargeMsgBufProvider};
 use crate::codec::{encode_u8_slice, Codec, MessageBuf};
@@ -126,11 +128,11 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         // Process message
         match self.handle_request(msg_buf).await {
             Ok(()) => {
-                self.send_response(msg_buf, secure).await?;
+                alloc::boxed::Box::pin(self.send_response(msg_buf, secure)).await?;
             }
             Err((rsp, command_error)) => {
                 if rsp {
-                    self.send_response(msg_buf, secure)
+                    alloc::boxed::Box::pin(self.send_response(msg_buf, secure))
                         .await
                         .inspect_err(|_| {})?;
                 }
@@ -282,38 +284,72 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
 
         match req_code {
             ReqRespCode::GetVersion => {
-                version_rsp::handle_get_version(self, req_msg_header, req).await?
+                version_rsp::handle_get_version(self, req_msg_header, req)?
             }
             ReqRespCode::GetCapabilities => {
-                capabilities_rsp::handle_get_capabilities(self, req_msg_header, req).await?
+                capabilities_rsp::handle_get_capabilities(self, req_msg_header, req)?
             }
             ReqRespCode::NegotiateAlgorithms => {
-                algorithms_rsp::handle_negotiate_algorithms(self, req_msg_header, req).await?
+                algorithms_rsp::handle_negotiate_algorithms(self, req_msg_header, req)?
             }
             ReqRespCode::GetDigests => {
-                digests_rsp::handle_get_digests(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(digests_rsp::handle_get_digests(self, req_msg_header, req))
+                    .await?
             }
             ReqRespCode::GetCertificate => {
-                certificate_rsp::handle_get_certificate(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(certificate_rsp::handle_get_certificate(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
             ReqRespCode::Challenge => {
-                challenge_auth_rsp::handle_challenge(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(challenge_auth_rsp::handle_challenge(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
             ReqRespCode::GetMeasurements => {
-                measurements_rsp::handle_get_measurements(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(measurements_rsp::handle_get_measurements(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
             ReqRespCode::ChunkGet => {
-                chunk_get_rsp::handle_chunk_get(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(chunk_get_rsp::handle_chunk_get(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
             ReqRespCode::KeyExchange => {
-                key_exchange_rsp::handle_key_exchange(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(key_exchange_rsp::handle_key_exchange(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
-            ReqRespCode::Finish => finish_rsp::handle_finish(self, req_msg_header, req).await?,
+            ReqRespCode::Finish => {
+                alloc::boxed::Box::pin(finish_rsp::handle_finish(self, req_msg_header, req))
+                    .await?
+            }
             ReqRespCode::EndSession => {
-                end_session_ack_rsp::handle_end_session(self, req_msg_header, req).await?
+                end_session_ack_rsp::handle_end_session(self, req_msg_header, req)?
             }
             ReqRespCode::VendorDefinedRequest => {
-                vendor_defined_rsp::handle_vendor_defined_request(self, req_msg_header, req).await?
+                alloc::boxed::Box::pin(vendor_defined_rsp::handle_vendor_defined_request(
+                    self,
+                    req_msg_header,
+                    req,
+                ))
+                .await?
             }
             _ => Err((false, CommandError::UnsupportedRequest))?,
         }
@@ -441,6 +477,24 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
             }
             _ => {}
         }
+    }
+
+    /// Synchronous variant of `append_message_to_transcript` for transcript
+    /// contexts that don't require async (Vca, Digests).
+    pub(crate) fn append_message_to_transcript_sync(
+        &mut self,
+        msg_buf: &mut MessageBuf<'_>,
+        transcript_context: TranscriptContext,
+    ) -> CommandResult<()> {
+        let data_offset = msg_buf.data_offset();
+
+        let msg = msg_buf
+            .message_slice(data_offset)
+            .map_err(|e| (false, CommandError::Codec(e)))?;
+
+        self.shared_transcript
+            .append_sync(transcript_context, msg)
+            .map_err(|e| (false, CommandError::Transcript(e)))
     }
 
     pub(crate) async fn append_message_to_transcript(

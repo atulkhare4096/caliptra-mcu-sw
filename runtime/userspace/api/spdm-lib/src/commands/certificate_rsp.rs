@@ -308,6 +308,7 @@ async fn process_get_certificate<'a, P: SpdmProvider>(
     Ok(cert_resp_context)
 }
 
+#[inline(never)]
 pub(crate) async fn handle_get_certificate<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

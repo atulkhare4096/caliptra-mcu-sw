@@ -311,6 +311,7 @@ fn generate_chunk_send_early_error_ack<P: SpdmProvider>(
     Ok(())
 }
 
+#[inline(never)]
 pub(crate) async fn handle_chunk_send<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

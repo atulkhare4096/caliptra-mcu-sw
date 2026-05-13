@@ -30,7 +30,6 @@ pub trait SpdmTransport {
     }
 }
 
-#[derive(Debug)]
 pub enum TransportError {
     DriverError(ErrorCode),
     Codec(CodecError),
@@ -40,4 +39,10 @@ pub enum TransportError {
     NoRequestInFlight,
     InvalidMessage,
     OperationNotSupported,
+}
+
+impl core::fmt::Debug for TransportError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("TransportError")
+    }
 }

@@ -51,8 +51,12 @@ impl SpdmMeasurementValue for OcpEatManifest {
         asym_algo: AsymAlgo,
         measurement: &mut [u8],
     ) -> MeasurementsResult<usize> {
-        let mut claims_buf = [0u8; 1024];
-        let payload_size = claims::generate_claims(&mut claims_buf, nonce).await?;
+        // Use a static buffer to avoid holding 1024 bytes in the async state machine.
+        // Safe: single-threaded executor, only one measurement request at a time.
+        static mut CLAIMS_BUF: [u8; 1024] = [0u8; 1024];
+        let claims_buf = unsafe { &mut CLAIMS_BUF };
+
+        let payload_size = claims::generate_claims(claims_buf, nonce).await?;
 
         if payload_size > measurement.len() {
             return Err(MeasurementsError::BufferTooSmall);

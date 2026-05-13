@@ -255,6 +255,7 @@ async fn generate_chunk_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
+#[inline(never)]
 pub(crate) async fn handle_chunk_get<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

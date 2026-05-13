@@ -4,13 +4,19 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub type CodecResult<T> = Result<T, CodecError>;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum CodecError {
     BufferTooSmall,
     ReadError,
     WriteError,
     BufferOverflow,
     BufferUnderflow,
+}
+
+impl core::fmt::Debug for CodecError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("CodecError")
+    }
 }
 
 pub trait Codec {

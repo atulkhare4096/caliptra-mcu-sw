@@ -2,7 +2,7 @@
 
 use crate::vdm_handler::pci_sig::ide_km::protocol::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IdeDriverError {
     InvalidPortIndex,
     UnsupportedPortIndex,
@@ -13,6 +13,12 @@ pub enum IdeDriverError {
     KeySetGoFail,
     KeySetStopFail,
     NoMemory,
+}
+
+impl core::fmt::Debug for IdeDriverError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("IdeDriverError")
+    }
 }
 
 pub type IdeDriverResult<T> = Result<T, IdeDriverError>;

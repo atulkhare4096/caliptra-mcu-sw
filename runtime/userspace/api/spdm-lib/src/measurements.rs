@@ -18,7 +18,7 @@ use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 use caliptra_mcu_libapi_caliptra::mailbox_api::MAX_CRYPTO_MBOX_DATA_SIZE;
 use zerocopy::IntoBytes;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum MeasurementsError {
     InvalidIndex,
     InvalidOffset,
@@ -33,6 +33,13 @@ pub enum MeasurementsError {
     MeasurementSizeMismatch,
     CaliptraApi(CaliptraApiError),
 }
+
+impl core::fmt::Debug for MeasurementsError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("MeasurementsError")
+    }
+}
+
 pub type MeasurementsResult<T> = Result<T, MeasurementsError>;
 
 pub trait SpdmMeasurementValue {

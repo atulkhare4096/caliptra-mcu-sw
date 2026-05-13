@@ -12,7 +12,7 @@ use async_trait::async_trait;
 pub mod iana;
 pub mod pci_sig;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum VdmError {
     InvalidVendorId,
     InvalidRequestPayload,
@@ -28,6 +28,12 @@ pub enum VdmError {
     LargeResp(usize),
     Ide(IdeDriverError),
     Tdisp(TdispDriverError),
+}
+
+impl core::fmt::Debug for VdmError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("VdmError")
+    }
 }
 
 pub type VdmResult<T> = Result<T, VdmError>;

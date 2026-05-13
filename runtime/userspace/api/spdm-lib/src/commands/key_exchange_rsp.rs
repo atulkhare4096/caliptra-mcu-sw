@@ -413,6 +413,7 @@ async fn generate_key_exchange_response<'a, P: SpdmProvider>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
+#[inline(never)]
 pub(crate) async fn handle_key_exchange<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

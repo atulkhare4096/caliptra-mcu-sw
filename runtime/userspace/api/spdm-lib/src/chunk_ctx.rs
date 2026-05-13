@@ -2,7 +2,7 @@
 
 use crate::commands::certificate_rsp::CertificateResponse;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum ChunkError {
     /// Error initializing a large message context
     LargeMessageInitError,
@@ -18,6 +18,12 @@ pub enum ChunkError {
     BufferCapacityExceeded,
     /// Shared large message buffer is not available (in use by another transport)
     BufUnavailable,
+}
+
+impl core::fmt::Debug for ChunkError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("ChunkError")
+    }
 }
 
 /// Provider for the shared large message buffer.

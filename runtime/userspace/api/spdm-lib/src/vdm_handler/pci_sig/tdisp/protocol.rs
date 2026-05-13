@@ -7,7 +7,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const START_INTERFACE_NONCE_SIZE: usize = 32;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum TdispVersion {
     V10 = 0x10,
 }

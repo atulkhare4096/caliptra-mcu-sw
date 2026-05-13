@@ -197,6 +197,7 @@ async fn generate_finish_response<'a, P: SpdmProvider>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
+#[inline(never)]
 pub(crate) async fn handle_finish<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

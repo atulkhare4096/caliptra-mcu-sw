@@ -16,7 +16,7 @@ use caliptra_mcu_libapi_caliptra::crypto::hmac::{HkdfSalt, Hmac};
 use caliptra_mcu_libapi_caliptra::crypto::import::Import;
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum KeyScheduleError {
     BufferTooSmall,
     InvalidSessionKeyType,
@@ -25,6 +25,12 @@ pub enum KeyScheduleError {
     MasterSecretNotFound,
     DataSecretNotFound,
     CaliptraApi(CaliptraApiError),
+}
+
+impl core::fmt::Debug for KeyScheduleError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("KeyScheduleError")
+    }
 }
 
 pub type KeyScheduleResult<T> = Result<T, KeyScheduleError>;

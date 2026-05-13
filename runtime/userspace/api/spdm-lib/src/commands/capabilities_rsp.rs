@@ -141,7 +141,7 @@ fn req_flag_compatible(version: SpdmVersion, flags: &CapabilityFlags) -> bool {
     true
 }
 
-async fn process_get_capabilities<'a, P: SpdmProvider>(
+fn process_get_capabilities<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -242,11 +242,10 @@ async fn process_get_capabilities<'a, P: SpdmProvider>(
     ctx.measurements.set_spdm_version(spdm_version);
 
     // Append GET_CAPABILITIES to the transcript VCA context
-    ctx.append_message_to_transcript(req_payload, TranscriptContext::Vca, None)
-        .await
+    ctx.append_message_to_transcript_sync(req_payload, TranscriptContext::Vca)
 }
 
-async fn generate_capabilities_response<'a, P: SpdmProvider>(
+fn generate_capabilities_response<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     rsp_buf: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -282,8 +281,7 @@ async fn generate_capabilities_response<'a, P: SpdmProvider>(
     }
 
     // Append CAPABILITIES to the transcript VCA context
-    ctx.append_message_to_transcript(rsp_buf, TranscriptContext::Vca, None)
-        .await?;
+    ctx.append_message_to_transcript_sync(rsp_buf, TranscriptContext::Vca)?;
 
     rsp_buf
         .push_data(payload_len)
@@ -291,7 +289,7 @@ async fn generate_capabilities_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
-pub(crate) async fn handle_get_capabilities<'a, P: SpdmProvider>(
+pub(crate) fn handle_get_capabilities<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -301,11 +299,11 @@ pub(crate) async fn handle_get_capabilities<'a, P: SpdmProvider>(
     }
 
     // Process GET_CAPABILITIES request
-    process_get_capabilities(ctx, spdm_hdr, req_payload).await?;
+    process_get_capabilities(ctx, spdm_hdr, req_payload)?;
 
     // Generate CAPABILITIES response
     ctx.prepare_response_buffer(req_payload)?;
-    generate_capabilities_response(ctx, req_payload).await?;
+    generate_capabilities_response(ctx, req_payload)?;
 
     // Set handshake_in_the_clear flag based on local and peer capabilities
     let local_flags = ctx.local_capabilities.flags;

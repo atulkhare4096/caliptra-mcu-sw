@@ -3,7 +3,7 @@
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
 
 /// Error codes returned by TDISP driver
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum TdispDriverError {
     /// Input parameter is null or invalid.
     InvalidArgument,
@@ -25,6 +25,12 @@ pub enum TdispDriverError {
     GetMmioRangesFail,
     /// The driver function is not implemented.
     FunctionNotImplemented,
+}
+
+impl core::fmt::Debug for TdispDriverError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("TdispDriverError")
+    }
 }
 
 pub type TdispDriverResult<T> = Result<T, TdispDriverError>;

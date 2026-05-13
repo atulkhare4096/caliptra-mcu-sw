@@ -77,7 +77,7 @@ impl VersionNumberEntry<[u8; VERSION_ENTRY_SIZE]> {
 
 impl CommonCodec for VersionNumberEntry<[u8; VERSION_ENTRY_SIZE]> {}
 
-async fn generate_version_response<'a, P: SpdmProvider>(
+fn generate_version_response<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     rsp_buf: &mut MessageBuf<'a>,
     supported_versions: &[SpdmVersion],
@@ -103,8 +103,7 @@ async fn generate_version_response<'a, P: SpdmProvider>(
     }
 
     // Append response to VCA transcript
-    ctx.append_message_to_transcript(rsp_buf, TranscriptContext::Vca, None)
-        .await?;
+    ctx.append_message_to_transcript_sync(rsp_buf, TranscriptContext::Vca)?;
 
     // Push data offset up by total payload length
     rsp_buf
@@ -113,7 +112,7 @@ async fn generate_version_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
-async fn process_get_version<'a, P: SpdmProvider>(
+fn process_get_version<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -131,21 +130,20 @@ async fn process_get_version<'a, P: SpdmProvider>(
     ctx.shared_transcript.reset();
 
     // Append request to VCA transcript
-    ctx.append_message_to_transcript(req_payload, TranscriptContext::Vca, None)
-        .await
+    ctx.append_message_to_transcript_sync(req_payload, TranscriptContext::Vca)
 }
 
-pub(crate) async fn handle_get_version<'a, P: SpdmProvider>(
+pub(crate) fn handle_get_version<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     // Process GET_VERSION request
-    process_get_version(ctx, spdm_hdr, req_payload).await?;
+    process_get_version(ctx, spdm_hdr, req_payload)?;
 
     // Generate VERSION response
     ctx.prepare_response_buffer(req_payload)?;
-    generate_version_response(ctx, req_payload, ctx.supported_versions).await?;
+    generate_version_response(ctx, req_payload, ctx.supported_versions)?;
 
     // Invalidate state and reset session info
     ctx.reset();

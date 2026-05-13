@@ -9,7 +9,7 @@ use zerocopy::IntoBytes;
 
 pub const MAX_CERT_SLOTS_SUPPORTED: u8 = 2;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum CertStoreError {
     InitFailed,
     NotInitialized,
@@ -25,6 +25,12 @@ pub enum CertStoreError {
     OperationFailed,
     ResetRequired,
     CaliptraApi(CaliptraApiError),
+}
+
+impl core::fmt::Debug for CertStoreError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("CertStoreError")
+    }
 }
 pub type CertStoreResult<T> = Result<T, CertStoreError>;
 

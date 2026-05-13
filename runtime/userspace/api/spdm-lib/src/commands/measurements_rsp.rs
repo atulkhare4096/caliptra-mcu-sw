@@ -584,6 +584,7 @@ pub(crate) async fn generate_measurements_response<'a, P: SpdmProvider>(
     }
 }
 
+#[inline(never)]
 pub(crate) async fn handle_get_measurements<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,

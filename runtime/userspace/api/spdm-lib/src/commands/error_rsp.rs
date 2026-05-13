@@ -6,7 +6,7 @@ use crate::protocol::{ReqRespCode, SpdmMsgHdr, SpdmVersion};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 // SPDM error codes
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum ErrorCode {
     InvalidRequest = 0x01,
     Busy = 0x03,
@@ -30,6 +30,12 @@ pub enum ErrorCode {
     OperationFailed = 0x44,
     NoPendingRequests = 0x45,
     VendorDefined = 0xFF,
+}
+
+impl core::fmt::Debug for ErrorCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("ErrorCode")
+    }
 }
 
 impl From<ErrorCode> for u8 {

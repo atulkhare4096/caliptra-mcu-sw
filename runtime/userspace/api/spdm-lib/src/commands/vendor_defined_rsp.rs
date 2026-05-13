@@ -304,6 +304,7 @@ async fn generate_vendor_defined_response<'a, P: SpdmProvider>(
     }
 }
 
+#[inline(never)]
 pub(crate) async fn handle_vendor_defined_request<'a, P: SpdmProvider>(
     ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
