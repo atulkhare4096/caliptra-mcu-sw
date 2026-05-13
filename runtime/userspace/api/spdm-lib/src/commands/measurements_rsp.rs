@@ -5,9 +5,9 @@ use crate::chunk_ctx::ChunkError;
 use crate::codec::{encode_u8_slice, Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
-use crate::measurements::{MeasurementsError, SpdmMeasurements};
+use crate::measurements::{MeasurementsError, SpdmMeasurementValue, SpdmMeasurements};
 use crate::protocol::*;
 use crate::session::SessionInfo;
 use crate::state::ConnectionState;
@@ -100,11 +100,11 @@ impl MeasurementsResponse {
     /// data is fetched into it by `measurement_block_size`/`measurement_block`,
     /// then the full response (header + record + trailer + signature) is
     /// assembled in-place.
-    pub async fn encode_response(
+    pub async fn encode_response<C: SpdmCertStore, M: SpdmMeasurementValue>(
         &self,
-        measurements: &mut SpdmMeasurements<'_>,
+        measurements: &mut SpdmMeasurements<'_, M>,
         shared_transcript: &mut Transcript,
-        cert_store: &dyn SpdmCertStore,
+        cert_store: &C,
         offset: usize,
         resp_buf: &mut [u8],
         mut session_info: Option<&mut SessionInfo>,
@@ -213,9 +213,9 @@ impl MeasurementsResponse {
         Ok(copied)
     }
 
-    async fn response_fixed_fields(
+    async fn response_fixed_fields<M: SpdmMeasurementValue>(
         &self,
-        measurements: &SpdmMeasurements<'_>,
+        measurements: &SpdmMeasurements<'_, M>,
     ) -> CommandResult<[u8; RESPONSE_FIXED_FIELDS_SIZE]> {
         let mut fixed_rsp_fields = [0u8; RESPONSE_FIXED_FIELDS_SIZE];
         let mut fixed_rsp_buf = MessageBuf::new(&mut fixed_rsp_fields);
@@ -225,10 +225,10 @@ impl MeasurementsResponse {
         Ok(fixed_rsp_fields)
     }
 
-    async fn encode_response_fixed_fields(
+    async fn encode_response_fixed_fields<M: SpdmMeasurementValue>(
         &self,
         buf: &mut MessageBuf<'_>,
-        measurements: &SpdmMeasurements<'_>,
+        measurements: &SpdmMeasurements<'_, M>,
     ) -> CommandResult<usize> {
         // Measurement data must already be fetched before calling this.
         let measurement_record_size = measurements.measurement_record_len();
@@ -309,12 +309,12 @@ impl MeasurementsResponse {
         Ok(len)
     }
 
-    async fn l1_signature(
+    async fn l1_signature<C: SpdmCertStore>(
         &self,
         asym_algo: AsymAlgo,
         transcript: &mut Transcript,
         session_info: Option<&mut SessionInfo>,
-        cert_store: &dyn SpdmCertStore,
+        cert_store: &C,
     ) -> CommandResult<[u8; ECC_P384_SIGNATURE_SIZE]> {
         let mut signature = [0u8; ECC_P384_SIGNATURE_SIZE];
         let mut signature_buf = MessageBuf::new(&mut signature);
@@ -331,12 +331,12 @@ impl MeasurementsResponse {
         Ok(signature)
     }
 
-    async fn encode_l1_signature(
+    async fn encode_l1_signature<C: SpdmCertStore>(
         &self,
         asym_algo: AsymAlgo,
         transcript: &mut Transcript,
         session_info: Option<&mut SessionInfo>,
-        cert_store: &dyn SpdmCertStore,
+        cert_store: &C,
         buf: &mut MessageBuf<'_>,
     ) -> CommandResult<usize> {
         // Get the L1 transcript hash
@@ -384,9 +384,9 @@ impl MeasurementsResponse {
         Ok(signature.len())
     }
 
-    async fn response_size(
+    async fn response_size<M: SpdmMeasurementValue>(
         &self,
-        measurements: &mut SpdmMeasurements<'_>,
+        measurements: &mut SpdmMeasurements<'_, M>,
         meas_buf: &mut [u8],
     ) -> CommandResult<usize> {
         // Calculate the size of the response based on the request attributes
@@ -418,8 +418,8 @@ impl MeasurementsResponse {
     }
 }
 
-async fn process_get_measurements<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_get_measurements<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<MeasurementsResponse> {
@@ -488,8 +488,8 @@ async fn process_get_measurements<'a>(
     Ok(get_meas_req_context)
 }
 
-pub(crate) async fn generate_measurements_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn generate_measurements_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     rsp_ctx: MeasurementsResponse,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -586,8 +586,8 @@ pub(crate) async fn generate_measurements_response<'a>(
     }
 }
 
-pub(crate) async fn handle_get_measurements<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_get_measurements<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

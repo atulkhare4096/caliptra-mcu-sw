@@ -1,10 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
 use crate::vdm_handler::pci_sig::ide_km::protocol::*;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdeDriverError {
@@ -25,7 +21,6 @@ pub type IdeDriverResult<T> = Result<T, IdeDriverError>;
 ///
 /// Provides an interface for Integrity and Data Encryption (IDE) key management operations.
 /// This trait abstracts hardware-specific implementations for different platforms.
-#[async_trait]
 pub trait IdeDriver: Send + Sync {
     /// Get the port configuration for a given port index.
     ///
@@ -149,7 +144,6 @@ mod tests {
         num_addr_association_reg_blocks: u8,
     }
 
-    #[async_trait]
     impl IdeDriver for ExampleIdeDriver {
         fn port_config(&self, port_index: u8) -> IdeDriverResult<PortConfig> {
             // Test implementation - return a default config

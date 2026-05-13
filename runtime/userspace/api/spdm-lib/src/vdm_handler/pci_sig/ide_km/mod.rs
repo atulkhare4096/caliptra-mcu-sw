@@ -17,24 +17,24 @@ pub mod protocol;
 
 const IDE_KM_PROTOCOL_ID: u8 = 0x00;
 
-pub struct IdeKmResponder<'a> {
-    ide_km_driver: &'a mut dyn IdeDriver,
+pub struct IdeKmResponder<'a, I: IdeDriver> {
+    ide_km_driver: &'a mut I,
 }
 
-impl<'a> IdeKmResponder<'a> {
-    pub fn new(ide_km_driver: &'a mut dyn IdeDriver) -> Self {
+impl<'a, I: IdeDriver> IdeKmResponder<'a, I> {
+    pub fn new(ide_km_driver: &'a mut I) -> Self {
         IdeKmResponder { ide_km_driver }
     }
 }
 
-impl VdmProtocolMatcher for IdeKmResponder<'_> {
+impl<I: IdeDriver> VdmProtocolMatcher for IdeKmResponder<'_, I> {
     fn match_protocol(&self, protocol_id: u8) -> bool {
         protocol_id == IDE_KM_PROTOCOL_ID
     }
 }
 
-#[async_trait]
-impl VdmResponder for IdeKmResponder<'_> {
+#[async_trait(?Send)]
+impl<I: IdeDriver> VdmResponder for IdeKmResponder<'_, I> {
     async fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
@@ -67,4 +67,4 @@ impl VdmResponder for IdeKmResponder<'_> {
     }
 }
 
-impl VdmProtocolHandler for IdeKmResponder<'_> {}
+impl<I: IdeDriver> VdmProtocolHandler for IdeKmResponder<'_, I> {}

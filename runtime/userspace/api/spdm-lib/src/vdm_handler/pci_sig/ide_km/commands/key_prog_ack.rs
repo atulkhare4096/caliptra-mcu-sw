@@ -26,10 +26,10 @@ pub struct KeyData {
 
 impl CommonCodec for KeyData {}
 
-async fn process_key_prog(
+async fn process_key_prog<I: IdeDriver>(
     req_buf: &mut MessageBuf<'_>,
     key_prog: &KeyProg,
-    ide_km_driver: &mut dyn IdeDriver,
+    ide_km_driver: &mut I,
 ) -> VdmResult<u8> {
     let key_data = KeyData::decode(req_buf).map_err(VdmError::Codec)?;
 
@@ -45,10 +45,10 @@ async fn process_key_prog(
         .map_err(VdmError::Ide)
 }
 
-pub(crate) async fn handle_key_prog(
+pub(crate) async fn handle_key_prog<I: IdeDriver>(
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
-    ide_km_driver: &mut dyn IdeDriver,
+    ide_km_driver: &mut I,
 ) -> VdmResult<usize> {
     let mut key_prog = KeyProg::decode(req_buf).map_err(VdmError::Codec)?;
     // Process KEY_PROG request

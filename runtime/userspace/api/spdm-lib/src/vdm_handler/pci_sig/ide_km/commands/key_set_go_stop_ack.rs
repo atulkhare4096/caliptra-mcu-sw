@@ -17,11 +17,11 @@ pub struct KeySetGoStop {
 }
 impl CommonCodec for KeySetGoStop {}
 
-pub(crate) async fn handle_key_set_go_stop(
+pub(crate) async fn handle_key_set_go_stop<I: IdeDriver>(
     key_set_go: bool,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
-    ide_km_driver: &mut dyn IdeDriver,
+    ide_km_driver: &mut I,
 ) -> crate::vdm_handler::VdmResult<usize> {
     // Process KEY_SET_GO or KEY_SET_STOP request
     let key_set_go_stop =

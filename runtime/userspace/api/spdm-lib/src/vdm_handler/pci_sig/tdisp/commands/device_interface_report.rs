@@ -3,6 +3,7 @@
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::error_response;
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
+use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriver;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -24,8 +25,8 @@ struct GetDeviceIntfReportRespHdr {
 }
 impl CommonCodec for GetDeviceIntfReportRespHdr {}
 
-pub(crate) async fn handle_get_device_interface_report(
-    tdisp_responder: &mut TdispResponder<'_>,
+pub(crate) async fn handle_get_device_interface_report<D: TdispDriver>(
+    tdisp_responder: &mut TdispResponder<'_, D>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,

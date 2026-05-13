@@ -150,9 +150,9 @@ impl SessionManager {
             .ok_or(SessionError::InvalidSessionId)
     }
 
-    pub async fn encode_secure_message(
+    pub async fn encode_secure_message<T: SpdmTransport>(
         &mut self,
-        transport: &dyn SpdmTransport,
+        transport: &T,
         app_data_buffer: &[u8],
         secure_message: &mut MessageBuf<'_>,
     ) -> SessionResult<()> {
@@ -229,9 +229,9 @@ impl SessionManager {
         Ok(())
     }
 
-    pub async fn decode_secure_message(
+    pub async fn decode_secure_message<T: SpdmTransport>(
         &mut self,
-        transport: &dyn SpdmTransport,
+        transport: &T,
         secure_message: &mut MessageBuf<'_>,
         app_data_buffer: &mut [u8],
     ) -> SessionResult<usize> {

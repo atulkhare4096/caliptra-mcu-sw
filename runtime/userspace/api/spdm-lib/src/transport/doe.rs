@@ -2,18 +2,15 @@
 
 // DOE Transport Implementation
 
-extern crate alloc;
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use bitfield::bitfield;
 use caliptra_mcu_libsyscall_caliptra::doe::{driver_num, Doe};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const DOE_HEADER_SIZE: usize = 8;
 const DOE_PCI_SIG_VENDOR_ID: u16 = 0x0001; // PCI-SIG Vendor ID
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 #[repr(u8)]
 pub enum DataObjectType {
     DoeSpdm = 1,
@@ -77,7 +74,6 @@ impl Default for DoeTransport {
     }
 }
 
-#[async_trait]
 impl SpdmTransport for DoeTransport {
     async fn send_request<'a>(
         &mut self,

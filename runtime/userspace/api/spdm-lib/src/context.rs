@@ -10,7 +10,7 @@ use crate::commands::{
     measurements_rsp, vendor_defined_rsp, version_rsp,
 };
 use crate::error::*;
-use crate::measurements::SpdmMeasurements;
+use crate::measurements::{SpdmMeasurementValue, SpdmMeasurements};
 use crate::protocol::algorithms::*;
 use crate::protocol::common::{ReqRespCode, SpdmMsgHdr};
 use crate::protocol::version::*;
@@ -28,31 +28,51 @@ use core::mem::size_of;
 // Maximum SPDM responder buffer size
 pub const MAX_SPDM_RESPONDER_BUF_SIZE: usize = 1024;
 
-pub struct SpdmContext<'a> {
-    transport: &'a mut dyn SpdmTransport,
+/// Trait that bundles the platform-specific types used by `SpdmContext`.
+///
+/// Instead of carrying three independent generic type parameters everywhere,
+/// a single `P: SpdmProvider` is used. Platform code implements this trait
+/// once per transport variant, e.g.:
+///
+/// ```ignore
+/// struct MctpPlatform;
+/// impl SpdmProvider for MctpPlatform {
+///     type Transport = MctpTransport;
+///     type CertStore = DeviceCertStore;
+///     type Measurements = OcpEatMeasurements;
+/// }
+/// ```
+pub trait SpdmProvider {
+    type Transport: SpdmTransport;
+    type CertStore: SpdmCertStore;
+    type Measurements: SpdmMeasurementValue;
+}
+
+pub struct SpdmContext<'a, P: SpdmProvider> {
+    transport: &'a mut P::Transport,
     pub(crate) supported_versions: &'a [SpdmVersion],
     pub(crate) supported_secure_versions: &'a [SpdmVersion],
     pub(crate) state: State,
     pub(crate) shared_transcript: Transcript,
     pub(crate) local_capabilities: DeviceCapabilities,
     pub(crate) local_algorithms: LocalDeviceAlgorithms<'a>,
-    pub(crate) device_certs_store: &'a dyn SpdmCertStore,
-    pub(crate) measurements: SpdmMeasurements<'a>,
+    pub(crate) device_certs_store: &'a P::CertStore,
+    pub(crate) measurements: SpdmMeasurements<'a, P::Measurements>,
     pub(crate) large_msg_ctx: LargeMessageCtx<'a>,
     pub(crate) session_mgr: SessionManager,
     pub(crate) vdm_handlers: Option<&'a mut [&'a mut dyn VdmHandler]>,
 }
 
-impl<'a> SpdmContext<'a> {
+impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         supported_versions: &'a [SpdmVersion],
         supported_secure_versions: &'a [SpdmVersion],
-        spdm_transport: &'a mut dyn SpdmTransport,
+        spdm_transport: &'a mut P::Transport,
         local_capabilities: DeviceCapabilities,
         local_algorithms: LocalDeviceAlgorithms<'a>,
-        device_certs_store: &'a dyn SpdmCertStore,
-        measurements: SpdmMeasurements<'a>,
+        device_certs_store: &'a P::CertStore,
+        measurements: SpdmMeasurements<'a, P::Measurements>,
         vdm_handlers: Option<&'a mut [&'a mut dyn VdmHandler]>,
         large_msg_buf_provider: &'a dyn LargeMsgBufProvider,
     ) -> SpdmResult<Self> {

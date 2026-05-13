@@ -3,7 +3,7 @@
 use crate::cert_store::{cert_slot_mask, spdm_cert_chain_hash, SpdmCertStore};
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -31,9 +31,9 @@ pub struct GetDigestsRespCommon {
 
 impl CommonCodec for GetDigestsRespCommon {}
 
-async fn encode_cert_chain_digest(
+async fn encode_cert_chain_digest<C: SpdmCertStore>(
     slot_id: u8,
-    cert_store: &dyn SpdmCertStore,
+    cert_store: &C,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -54,8 +54,8 @@ async fn encode_cert_chain_digest(
     Ok(SHA384_HASH_SIZE)
 }
 
-async fn generate_digests_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_digests_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     ctx.validate_negotiated_hash_algo(rsp)?;
@@ -115,8 +115,8 @@ async fn generate_digests_response<'a>(
     Ok(())
 }
 
-async fn encode_multi_key_conn_rsp_data(
-    ctx: &mut SpdmContext<'_>,
+async fn encode_multi_key_conn_rsp_data<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     provisioned_slot_mask: u8,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -179,8 +179,8 @@ async fn encode_multi_key_conn_rsp_data(
     Ok(total_size)
 }
 
-async fn process_get_digests<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_get_digests<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -208,8 +208,8 @@ async fn process_get_digests<'a>(
         .await
 }
 
-pub(crate) async fn handle_get_digests<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_get_digests<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

@@ -1,15 +1,11 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
 use crate::codec::CodecError;
 use crate::codec::MessageBuf;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libtock_platform::ErrorCode;
 
 pub type TransportResult<T> = Result<T, TransportError>;
 
-#[async_trait]
 pub trait SpdmTransport {
     async fn send_request<'a>(
         &mut self,

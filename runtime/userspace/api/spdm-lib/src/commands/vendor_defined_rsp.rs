@@ -2,7 +2,7 @@
 
 use crate::codec::*;
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::session::SessionState;
@@ -155,8 +155,8 @@ fn vendor_def_resp_hdr_len(vendor_id_len: u8) -> usize {
     size_of::<VendorDefRespHdr>() - MAX_SPDM_VENDOR_ID_LEN as usize + vendor_id_len as usize
 }
 
-async fn process_vendor_defined_request<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_vendor_defined_request<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<(
@@ -224,8 +224,8 @@ async fn process_vendor_defined_request<'a>(
     Ok((standards_body_id, vendor_id, vdm_req, vdm_req_len as usize))
 }
 
-async fn generate_vendor_defined_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_vendor_defined_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     standard_id: StandardsBodyId,
     vendor_id: [u8; MAX_SPDM_VENDOR_ID_LEN as usize],
     vdm_req_buf: &mut MessageBuf<'_>,
@@ -304,8 +304,8 @@ async fn generate_vendor_defined_response<'a>(
     }
 }
 
-pub(crate) async fn handle_vendor_defined_request<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_vendor_defined_request<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

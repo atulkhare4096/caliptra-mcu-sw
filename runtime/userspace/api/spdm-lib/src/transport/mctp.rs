@@ -2,12 +2,9 @@
 
 // MCTP Transport Implementation
 
-extern crate alloc;
 use crate::codec::MessageBuf;
 use crate::codec::{Codec, CommonCodec, DataKind};
 use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use bitfield::bitfield;
 use caliptra_mcu_libsyscall_caliptra::mctp::{Mctp, MessageInfo};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -72,7 +69,6 @@ impl MctpTransport {
     }
 }
 
-#[async_trait]
 impl SpdmTransport for MctpTransport {
     async fn send_request<'a>(
         &mut self,

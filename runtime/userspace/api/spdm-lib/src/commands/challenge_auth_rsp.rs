@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
-use crate::cert_store::{spdm_cert_chain_hash, MAX_CERT_SLOTS_SUPPORTED};
+use crate::cert_store::{spdm_cert_chain_hash, SpdmCertStore, MAX_CERT_SLOTS_SUPPORTED};
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -48,14 +48,13 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct ChallengeAuthAttr(u8);
-    impl Debug;
     u8;
     pub slot_id, set_slot_id: 3, 0;
     reserved, _: 7, 4;
 }
 
-async fn process_challenge<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_challenge<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<(u8, u8, Option<RequesterContext>)> {
@@ -116,8 +115,8 @@ async fn process_challenge<'a>(
     ))
 }
 
-async fn encode_m1_signature<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn encode_m1_signature<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     slot_id: u8,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'a>,
@@ -184,8 +183,8 @@ async fn encode_m1_signature<'a>(
     Ok(sig_len)
 }
 
-async fn encode_challenge_auth_rsp_base<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn encode_challenge_auth_rsp_base<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     slot_id: u8,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'a>,
@@ -213,8 +212,8 @@ async fn encode_challenge_auth_rsp_base<'a>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-pub(crate) async fn encode_measurement_summary_hash<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn encode_measurement_summary_hash<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     meas_summary_hash_type: u8,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<usize> {
@@ -242,8 +241,8 @@ pub(crate) async fn encode_measurement_summary_hash<'a>(
     Ok(hash_len)
 }
 
-async fn generate_challenge_auth_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_challenge_auth_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     slot_id: u8,
     meas_summary_hash_type: u8,
     requester_context: Option<RequesterContext>,
@@ -293,8 +292,8 @@ async fn generate_challenge_auth_response<'a>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-pub(crate) async fn handle_challenge<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_challenge<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

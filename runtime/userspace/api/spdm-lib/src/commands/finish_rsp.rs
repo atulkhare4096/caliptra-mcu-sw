@@ -4,7 +4,7 @@
 
 use crate::codec::{decode_u8_slice, encode_u8_slice, Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::session::{SessionKeyType, SessionState};
@@ -55,8 +55,8 @@ impl FinishRspBase {
     }
 }
 
-async fn verify_requester_verify_data(
-    ctx: &mut SpdmContext<'_>,
+async fn verify_requester_verify_data<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     session_id: u32,
     requester_verify_data: &[u8; SHA384_HASH_SIZE],
     req_payload: &mut MessageBuf<'_>,
@@ -83,8 +83,8 @@ async fn verify_requester_verify_data(
     Ok(())
 }
 
-async fn process_finish<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_finish<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     session_id: u32,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -119,8 +119,8 @@ async fn process_finish<'a>(
     .await
 }
 
-async fn encode_responder_verify_data(
-    ctx: &mut SpdmContext<'_>,
+async fn encode_responder_verify_data<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     session_id: u32,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -152,8 +152,8 @@ async fn encode_responder_verify_data(
     Ok(len)
 }
 
-async fn generate_finish_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_finish_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     session_id: u32,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -198,8 +198,8 @@ async fn generate_finish_response<'a>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-pub(crate) async fn handle_finish<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_finish<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

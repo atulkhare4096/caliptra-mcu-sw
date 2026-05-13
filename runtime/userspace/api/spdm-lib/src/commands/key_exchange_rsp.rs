@@ -2,12 +2,12 @@
 
 #![allow(dead_code)]
 
-use crate::cert_store::{spdm_cert_chain_hash, MAX_CERT_SLOTS_SUPPORTED};
+use crate::cert_store::{spdm_cert_chain_hash, SpdmCertStore, MAX_CERT_SLOTS_SUPPORTED};
 use crate::codec::{encode_u8_slice, Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::challenge_auth_rsp::encode_measurement_summary_hash;
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::opaque_element::secure_message::{
     sm_select_version_from_list, sm_selected_version_opaque_data, SmVersion,
@@ -117,8 +117,8 @@ fn init_session(
     );
 }
 
-async fn process_key_exchange<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_key_exchange<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     asym_algo: AsymAlgo,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -268,8 +268,8 @@ async fn encode_key_exchange_rsp_base(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-async fn th1_signature(
-    ctx: &mut SpdmContext<'_>,
+async fn th1_signature<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     session_id: u32,
     slot_id: u8,
     asym_algo: AsymAlgo,
@@ -300,8 +300,8 @@ async fn th1_signature(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn generate_key_exchange_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_key_exchange_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     asym_algo: AsymAlgo,
     key_exch_rsp_ctx: KeyExchRspContext,
     rsp: &mut MessageBuf<'a>,
@@ -414,8 +414,8 @@ async fn generate_key_exchange_response<'a>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-pub(crate) async fn handle_key_exchange<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_key_exchange<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

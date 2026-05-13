@@ -3,7 +3,7 @@ use crate::chunk_ctx::ChunkError;
 use crate::chunk_ctx::LargeResponse;
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -54,7 +54,7 @@ impl CommonCodec for LargeResponseSize {
     const DATA_KIND: DataKind = DataKind::Header;
 }
 
-pub(crate) fn max_chunked_resp_size(ctx: &SpdmContext) -> usize {
+pub(crate) fn max_chunked_resp_size<P: SpdmProvider>(ctx: &SpdmContext<'_, P>) -> usize {
     let min_data_transfer_size = ctx.min_data_transfer_size();
 
     // compute max possible response size that can be transferred in chunks is less than the large response size
@@ -64,7 +64,7 @@ pub(crate) fn max_chunked_resp_size(ctx: &SpdmContext) -> usize {
 
 // Computes the chunk size based on the context and the chunk sequence number
 // Returns the chunk size and a boolean indicating if this is the last chunk
-fn compute_chunk_size(ctx: &SpdmContext, chunk_seq_num: u16) -> CommandResult<(usize, bool)> {
+fn compute_chunk_size<P: SpdmProvider>(ctx: &SpdmContext<'_, P>, chunk_seq_num: u16) -> CommandResult<(usize, bool)> {
     let extra_field_size = if chunk_seq_num == 0 {
         size_of::<LargeResponseSize>()
     } else {
@@ -86,8 +86,8 @@ fn compute_chunk_size(ctx: &SpdmContext, chunk_seq_num: u16) -> CommandResult<(u
     })
 }
 
-fn process_chunk_get<'a>(
-    ctx: &mut SpdmContext<'a>,
+fn process_chunk_get<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<(u8, u16)> {
@@ -149,8 +149,8 @@ fn encode_chunk_response_hdr(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-async fn encode_chunk_data(
-    ctx: &mut SpdmContext<'_>,
+async fn encode_chunk_data<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     chunk_size: usize,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -204,8 +204,8 @@ async fn encode_chunk_data(
     Ok(bytes_copied)
 }
 
-async fn generate_chunk_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_chunk_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     handle: u8,
     chunk_seq_num: u16,
     rsp: &mut MessageBuf<'a>,
@@ -256,8 +256,8 @@ async fn generate_chunk_response<'a>(
     Ok(())
 }
 
-pub(crate) async fn handle_chunk_get<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_chunk_get<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

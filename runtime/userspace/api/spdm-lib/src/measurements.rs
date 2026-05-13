@@ -10,11 +10,7 @@
 /// | - MeasurementSize: 2 bytes (size of manifest in DMTF measurement specification format)               |
 /// | - MeasurementBlock: measurement block (manifest in DMTF measurement specification format)            |
 /// _______________________________________________________________________________________________________|
-extern crate alloc;
-
 use crate::protocol::*;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
@@ -39,7 +35,6 @@ pub enum MeasurementsError {
 }
 pub type MeasurementsResult<T> = Result<T, MeasurementsError>;
 
-#[async_trait]
 pub trait SpdmMeasurementValue {
     /// Retrieves the measurement value for the specified index.
     ///
@@ -136,9 +131,9 @@ impl MeasurementValueInfo {
 }
 
 /// Structure to hold and retrieve SPDM measurements information
-pub struct SpdmMeasurements<'a> {
+pub struct SpdmMeasurements<'a, M> {
     meas_value_info: &'a [MeasurementValueInfo],
-    meas_value: &'a mut dyn SpdmMeasurementValue,
+    meas_value: &'a mut M,
     nonce: Option<[u8; SPDM_NONCE_LEN]>,
     asym_algo: Option<AsymAlgo>,
     spdm_version: Option<SpdmVersion>,
@@ -200,7 +195,7 @@ impl MeasurementRecord {
     }
 }
 
-impl<'a> SpdmMeasurements<'a> {
+impl<'a, M: SpdmMeasurementValue> SpdmMeasurements<'a, M> {
     /// Creates a new instance of `SpdmMeasurements`.
     ///
     /// # Arguments
@@ -211,7 +206,7 @@ impl<'a> SpdmMeasurements<'a> {
     /// A new instance of `SpdmMeasurements`.
     pub fn new(
         meas_value_info: &'a [MeasurementValueInfo],
-        meas_value: &'a mut dyn SpdmMeasurementValue,
+        meas_value: &'a mut M,
     ) -> Self {
         SpdmMeasurements {
             meas_value_info,

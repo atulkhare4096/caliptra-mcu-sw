@@ -42,16 +42,16 @@ macro_rules! error_response {
     };
 }
 
-pub struct TdispResponder<'a> {
+pub struct TdispResponder<'a, D: TdispDriver> {
     supported_versions: &'a [TdispVersion],
-    driver: &'a mut dyn TdispDriver,
+    driver: &'a mut D,
     state: TdispState,
 }
 
-impl<'a> TdispResponder<'a> {
+impl<'a, D: TdispDriver> TdispResponder<'a, D> {
     pub fn new(
         supported_versions: &'a [TdispVersion],
-        driver: &'a mut dyn TdispDriver,
+        driver: &'a mut D,
     ) -> Option<Self> {
         if supported_versions.is_empty() {
             return None;
@@ -64,14 +64,14 @@ impl<'a> TdispResponder<'a> {
     }
 }
 
-impl VdmProtocolMatcher for TdispResponder<'_> {
+impl<D: TdispDriver> VdmProtocolMatcher for TdispResponder<'_, D> {
     fn match_protocol(&self, protocol_id: u8) -> bool {
         protocol_id == TDISP_PROTOCOL_ID
     }
 }
 
-#[async_trait]
-impl VdmResponder for TdispResponder<'_> {
+#[async_trait(?Send)]
+impl<D: TdispDriver> VdmResponder for TdispResponder<'_, D> {
     async fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
@@ -179,4 +179,4 @@ impl VdmResponder for TdispResponder<'_> {
     }
 }
 
-impl VdmProtocolHandler for TdispResponder<'_> {}
+impl<D: TdispDriver> VdmProtocolHandler for TdispResponder<'_, D> {}

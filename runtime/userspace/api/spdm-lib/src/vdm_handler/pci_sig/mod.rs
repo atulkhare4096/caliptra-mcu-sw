@@ -57,7 +57,7 @@ impl<'a> PciSigCmdHandler<'a> {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl VdmResponder for PciSigCmdHandler<'_> {
     async fn handle_request(
         &mut self,

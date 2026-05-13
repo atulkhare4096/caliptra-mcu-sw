@@ -7,7 +7,7 @@ use crate::cert_store::{
 use crate::chunk_ctx::LargeResponse;
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -121,10 +121,10 @@ impl CertificateResponse {
         Ok(rsp_hdr_bytes.len())
     }
 
-    pub async fn get_chunk(
+    pub async fn get_chunk<C: SpdmCertStore>(
         &self,
         shared_transcript: &mut Transcript,
-        cert_store: &dyn SpdmCertStore,
+        cert_store: &C,
         cert_rsp_offset: usize,
         chunk: &mut [u8],
     ) -> CommandResult<usize> {
@@ -171,8 +171,8 @@ impl CertificateResponse {
     }
 }
 
-async fn generate_certificate_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_certificate_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     rsp_ctx: CertificateResponse,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -228,8 +228,8 @@ async fn generate_certificate_response<'a>(
     Ok(())
 }
 
-async fn process_get_certificate<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_get_certificate<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<CertificateResponse> {
@@ -311,8 +311,8 @@ async fn process_get_certificate<'a>(
     Ok(cert_resp_context)
 }
 
-pub(crate) async fn handle_get_certificate<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_get_certificate<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -141,8 +141,8 @@ fn req_flag_compatible(version: SpdmVersion, flags: &CapabilityFlags) -> bool {
     true
 }
 
-async fn process_get_capabilities<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn process_get_capabilities<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -246,8 +246,8 @@ async fn process_get_capabilities<'a>(
         .await
 }
 
-async fn generate_capabilities_response<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_capabilities_response<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     rsp_buf: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     let version = ctx.state.connection_info.version_number();
@@ -291,8 +291,8 @@ async fn generate_capabilities_response<'a>(
     Ok(())
 }
 
-pub(crate) async fn handle_get_capabilities<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_get_capabilities<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

@@ -1,10 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 
 /// Error codes returned by TDISP driver
 #[derive(Debug, PartialEq)]
@@ -36,7 +32,6 @@ pub type TdispDriverResult<T> = Result<T, TdispDriverError>;
 /// TDISP Driver trait that defines the interface for TDISP operations.
 /// This trait is intended to be implemented by a TDISP driver
 /// that interacts with the TDISP device.
-#[async_trait]
 pub trait TdispDriver: Send + Sync {
     /// Gets the TDISP device capabilities.
     ///

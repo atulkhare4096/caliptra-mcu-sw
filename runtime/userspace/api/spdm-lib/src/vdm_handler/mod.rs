@@ -32,7 +32,7 @@ pub enum VdmError {
 
 pub type VdmResult<T> = Result<T, VdmError>;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait VdmResponder {
     /// Handle a VDM request and produce a response.
     ///

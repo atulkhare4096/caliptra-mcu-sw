@@ -3,12 +3,13 @@
 use crate::codec::{encode_u8_slice, Codec, MessageBuf};
 use crate::error_response;
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
+use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriver;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 use caliptra_mcu_libapi_caliptra::crypto::rng::Rng;
 
-pub(crate) async fn handle_lock_interface(
-    tdisp_responder: &mut TdispResponder<'_>,
+pub(crate) async fn handle_lock_interface<D: TdispDriver>(
+    tdisp_responder: &mut TdispResponder<'_, D>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,

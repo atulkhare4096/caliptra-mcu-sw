@@ -20,9 +20,9 @@ fn process_query_req(req_buf: &mut MessageBuf<'_>) -> VdmResult<u8> {
     Ok(query_req.port_index)
 }
 
-async fn generate_query_resp(
+async fn generate_query_resp<I: IdeDriver>(
     port_index: u8,
-    ide_km_driver: &dyn IdeDriver,
+    ide_km_driver: &I,
     rsp_buf: &mut MessageBuf<'_>,
 ) -> VdmResult<usize> {
     let ide_km_rsp_hdr = IdeKmHdr {
@@ -80,10 +80,10 @@ async fn generate_query_resp(
     Ok(len)
 }
 
-pub(crate) async fn handle_query(
+pub(crate) async fn handle_query<I: IdeDriver>(
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
-    ide_km_driver: &dyn IdeDriver,
+    ide_km_driver: &I,
 ) -> VdmResult<usize> {
     let port_index = process_query_req(req_buf)?;
 

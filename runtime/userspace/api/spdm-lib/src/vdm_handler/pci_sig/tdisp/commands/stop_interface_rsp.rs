@@ -2,11 +2,12 @@
 
 use crate::error_response;
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
+use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriver;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::VdmResult;
 
-pub(crate) async fn handle_stop_interface_request(
-    tdisp_responder: &mut TdispResponder<'_>,
+pub(crate) async fn handle_stop_interface_request<D: TdispDriver>(
+    tdisp_responder: &mut TdispResponder<'_, D>,
     req_hdr: &TdispMessageHeader,
 ) -> VdmResult<TdispCmdResult> {
     let function_id = req_hdr.interface_id.function_id;

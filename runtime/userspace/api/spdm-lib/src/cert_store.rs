@@ -1,11 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
 use crate::error::{SpdmError, SpdmResult};
 use crate::protocol::*;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext, SHA384_HASH_SIZE};
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
@@ -32,7 +28,6 @@ pub enum CertStoreError {
 }
 pub type CertStoreResult<T> = Result<T, CertStoreError>;
 
-#[async_trait]
 pub trait SpdmCertStore {
     /// Get supported certificate slot count
     /// The supported slots are consecutive from 0 to slot_count - 1.
@@ -186,7 +181,7 @@ pub trait SpdmCertStore {
     async fn erase_cert_chain(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<()>;
 }
 
-pub(crate) fn validate_cert_store(cert_store: &dyn SpdmCertStore) -> SpdmResult<()> {
+pub(crate) fn validate_cert_store<C: SpdmCertStore>(cert_store: &C) -> SpdmResult<()> {
     let slot_count = cert_store.slot_count();
     if slot_count > MAX_CERT_SLOTS_SUPPORTED {
         Err(SpdmError::InvalidParam)?;
@@ -194,7 +189,7 @@ pub(crate) fn validate_cert_store(cert_store: &dyn SpdmCertStore) -> SpdmResult<
     Ok(())
 }
 
-pub(crate) async fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
+pub(crate) async fn cert_slot_mask<C: SpdmCertStore>(cert_store: &C) -> (u8, u8) {
     let slot_count = cert_store.slot_count().min(MAX_CERT_SLOTS_SUPPORTED);
     let supported_slot_mask = (1 << slot_count) - 1;
 
@@ -220,8 +215,8 @@ pub(crate) async fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
 ///
 /// # Returns
 /// * `hash` - The hash of the certificate chain.
-pub(crate) async fn spdm_cert_chain_hash(
-    cert_store: &dyn SpdmCertStore,
+pub(crate) async fn spdm_cert_chain_hash<C: SpdmCertStore>(
+    cert_store: &C,
     slot_id: u8,
     asym_algo: AsymAlgo,
     hash: &mut [u8],
@@ -267,8 +262,8 @@ pub(crate) async fn spdm_cert_chain_hash(
         .map_err(CertStoreError::CaliptraApi)
 }
 
-pub(crate) async fn spdm_cert_chain_len(
-    cert_store: &dyn SpdmCertStore,
+pub(crate) async fn spdm_cert_chain_len<C: SpdmCertStore>(
+    cert_store: &C,
     slot_id: u8,
     asym_algo: AsymAlgo,
 ) -> CertStoreResult<usize> {
@@ -276,8 +271,8 @@ pub(crate) async fn spdm_cert_chain_len(
     Ok(cert_chain_len + SPDM_CERT_CHAIN_METADATA_LEN)
 }
 
-async fn spdm_cert_chain_hdr(
-    cert_store: &dyn SpdmCertStore,
+async fn spdm_cert_chain_hdr<C: SpdmCertStore>(
+    cert_store: &C,
     slot_id: u8,
     asym_algo: AsymAlgo,
 ) -> CertStoreResult<SpdmCertChainHeader> {
@@ -297,8 +292,8 @@ async fn spdm_cert_chain_hdr(
     Ok(header)
 }
 
-pub(crate) async fn spdm_read_cert_chain(
-    cert_store: &dyn SpdmCertStore,
+pub(crate) async fn spdm_read_cert_chain<C: SpdmCertStore>(
+    cert_store: &C,
     slot_id: u8,
     asym_algo: AsymAlgo,
     offset: usize,

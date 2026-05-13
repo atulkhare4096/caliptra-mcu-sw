@@ -2,7 +2,7 @@
 
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::{encode_error_response, ErrorCode};
-use crate::context::SpdmContext;
+use crate::context::{SpdmContext, SpdmProvider};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -123,8 +123,8 @@ fn encode_chunk_send_ack_hdr(
     ack.encode(rsp).map_err(|e| (false, CommandError::Codec(e)))
 }
 
-fn validate_common(
-    ctx: &SpdmContext<'_>,
+fn validate_common<P: SpdmProvider>(
+    ctx: &SpdmContext<'_, P>,
     spdm_hdr: &SpdmMsgHdr,
     req: &mut MessageBuf<'_>,
 ) -> CommandResult<SpdmVersion> {
@@ -149,8 +149,8 @@ fn validate_common(
     Ok(connection_version)
 }
 
-fn process_chunk_send(
-    ctx: &mut SpdmContext<'_>,
+fn process_chunk_send<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     spdm_hdr: SpdmMsgHdr,
     req: &mut MessageBuf<'_>,
 ) -> CommandResult<ChunkSendProcessResult> {
@@ -251,8 +251,8 @@ fn process_chunk_send(
     }))
 }
 
-async fn generate_chunk_send_ack<'a>(
-    ctx: &mut SpdmContext<'a>,
+async fn generate_chunk_send_ack<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     info: ChunkSendInfo,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -298,8 +298,8 @@ async fn generate_chunk_send_ack<'a>(
     }
 }
 
-fn generate_chunk_send_early_error_ack(
-    ctx: &mut SpdmContext<'_>,
+fn generate_chunk_send_early_error_ack<P: SpdmProvider>(
+    ctx: &mut SpdmContext<'_, P>,
     handle: u8,
     chunk_seq_num: u16,
     rsp: &mut MessageBuf<'_>,
@@ -313,8 +313,8 @@ fn generate_chunk_send_early_error_ack(
     Ok(())
 }
 
-pub(crate) async fn handle_chunk_send<'a>(
-    ctx: &mut SpdmContext<'a>,
+pub(crate) async fn handle_chunk_send<'a, P: SpdmProvider>(
+    ctx: &mut SpdmContext<'a, P>,
     spdm_hdr: SpdmMsgHdr,
     req: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -341,12 +341,12 @@ mod tests {
 
     use super::*;
     use crate::cert_store::{CertStoreError, CertStoreResult, SpdmCertStore};
+    use crate::context::SpdmProvider;
     use crate::measurements::{MeasurementsResult, SpdmMeasurementValue};
     use crate::protocol::algorithms::LocalDeviceAlgorithms;
     use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
     use alloc::boxed::Box;
     use alloc::vec;
-    use async_trait::async_trait;
     use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
     use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 
@@ -354,7 +354,6 @@ mod tests {
 
     struct TestTransport;
 
-    #[async_trait]
     impl SpdmTransport for TestTransport {
         async fn send_request<'a>(
             &mut self,
@@ -402,7 +401,6 @@ mod tests {
 
     static SPDM_VERSIONS: &[SpdmVersion] = &[SpdmVersion::V12];
 
-    #[async_trait]
     impl SpdmCertStore for TestCertStore {
         fn slot_count(&self) -> u8 {
             0
@@ -481,7 +479,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl SpdmMeasurementValue for TestMeasurements {
         async fn get_measurement_value(
             &mut self,
@@ -520,12 +517,19 @@ mod tests {
         }
     }
 
+    struct TestPlatform;
+    impl SpdmProvider for TestPlatform {
+        type Transport = TestTransport;
+        type CertStore = TestCertStore;
+        type Measurements = TestMeasurements;
+    }
+
     fn test_context<'a>(
         transport: &'a mut TestTransport,
         cert_store: &'a TestCertStore,
         measurements: &'a mut TestMeasurements,
         buf_provider: &'a TestBufProvider,
-    ) -> SpdmContext<'a> {
+    ) -> SpdmContext<'a, TestPlatform> {
         let mut flags = CapabilityFlags::default();
         flags.set_chunk_cap(1);
         let capabilities = DeviceCapabilities {

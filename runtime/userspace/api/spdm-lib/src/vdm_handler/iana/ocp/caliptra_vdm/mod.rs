@@ -40,7 +40,7 @@ impl VdmRegistryMatcher for CaliptraVdmHandler<'_> {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl VdmResponder for CaliptraVdmHandler<'_> {
     async fn handle_request(
         &mut self,

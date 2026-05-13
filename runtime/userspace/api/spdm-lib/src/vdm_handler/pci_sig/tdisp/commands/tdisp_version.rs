@@ -3,11 +3,12 @@
 use crate::codec::{Codec, MessageBuf};
 use crate::error_response;
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
+use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriver;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 
-pub(crate) fn handle_get_tdisp_version(
-    tdisp_responder: &mut TdispResponder<'_>,
+pub(crate) fn handle_get_tdisp_version<D: TdispDriver>(
+    tdisp_responder: &mut TdispResponder<'_, D>,
     req_hdr: &TdispMessageHeader,
     rsp_buf: &mut MessageBuf<'_>,
 ) -> VdmResult<TdispCmdResult> {

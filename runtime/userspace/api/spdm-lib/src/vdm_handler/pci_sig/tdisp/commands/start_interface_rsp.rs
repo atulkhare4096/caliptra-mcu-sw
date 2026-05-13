@@ -3,12 +3,13 @@
 use crate::codec::{decode_u8_slice, MessageBuf};
 use crate::error_response;
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
+use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriver;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 use constant_time_eq::constant_time_eq;
 
-pub(crate) async fn handle_start_interface_request(
-    tdisp_responder: &mut TdispResponder<'_>,
+pub(crate) async fn handle_start_interface_request<D: TdispDriver>(
+    tdisp_responder: &mut TdispResponder<'_, D>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
 ) -> VdmResult<TdispCmdResult> {

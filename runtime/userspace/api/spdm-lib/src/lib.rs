@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 #![no_std]
+#![allow(async_fn_in_trait)]
 
 // Common errors
 pub mod error;
