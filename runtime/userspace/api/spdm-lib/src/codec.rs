@@ -30,33 +30,53 @@ pub trait CommonCodec: FromBytes + IntoBytes + Immutable {
     const DATA_KIND: DataKind = DataKind::Payload;
 }
 
+/// Encode raw bytes into buffer as a header (prepended before payload).
+/// This is a non-generic helper to avoid code duplication across CommonCodec monomorphizations.
+#[inline(never)]
+fn encode_header_raw(src: &[u8], buffer: &mut MessageBuf) -> CodecResult<usize> {
+    let len = src.len();
+    buffer.push_data(len)?;
+    let header = buffer.data_mut(len)?;
+    header.copy_from_slice(src);
+    buffer.push_head(len)?;
+    Ok(len)
+}
+
+/// Encode raw bytes into buffer as payload (appended after existing data).
+/// This is a non-generic helper to avoid code duplication across CommonCodec monomorphizations.
+#[inline(never)]
+fn encode_payload_raw(src: &[u8], buffer: &mut MessageBuf) -> CodecResult<usize> {
+    let len = src.len();
+    buffer.put_data(len)?;
+    if buffer.data_len() < len {
+        Err(CodecError::BufferTooSmall)?;
+    }
+    let payload = buffer.data_mut(len)?;
+    payload.copy_from_slice(src);
+    buffer.pull_data(len)?;
+    Ok(len)
+}
+
+/// Advance buffer past decoded data. Non-generic helper for CommonCodec::decode.
+#[inline(never)]
+fn decode_advance(buffer: &mut MessageBuf, len: usize, is_header: bool) -> CodecResult<()> {
+    buffer.pull_data(len)?;
+    if is_header {
+        buffer.pull_head(len)?;
+    }
+    Ok(())
+}
+
 impl<T> Codec for T
 where
     T: CommonCodec,
 {
+    #[inline(always)]
     fn encode(&self, buffer: &mut MessageBuf) -> CodecResult<usize> {
-        let len = core::mem::size_of::<T>();
         match T::DATA_KIND {
-            DataKind::Header => {
-                let len = core::mem::size_of::<Self>();
-                buffer.push_data(len)?;
-                let header = buffer.data_mut(len)?;
-                self.write_to(header).map_err(|_| CodecError::WriteError)?;
-                buffer.push_head(len)?;
-            }
-            DataKind::Payload => {
-                buffer.put_data(len)?;
-
-                if buffer.data_len() < len {
-                    Err(CodecError::BufferTooSmall)?;
-                }
-                let payload = buffer.data_mut(len)?;
-                self.write_to(payload).map_err(|_| CodecError::WriteError)?;
-                buffer.pull_data(len)?;
-            }
+            DataKind::Header => encode_header_raw(self.as_bytes(), buffer),
+            DataKind::Payload => encode_payload_raw(self.as_bytes(), buffer),
         }
-
-        Ok(len)
     }
 
     fn decode(buffer: &mut MessageBuf) -> CodecResult<T> {
@@ -65,13 +85,9 @@ where
             Err(CodecError::BufferTooSmall)?;
         }
         let data = buffer.data(len)?;
-        let data = T::read_from_bytes(data).map_err(|_| CodecError::ReadError)?;
-        buffer.pull_data(len)?;
-
-        if Self::DATA_KIND == DataKind::Header {
-            buffer.pull_head(len)?;
-        }
-        Ok(data)
+        let val = T::read_from_bytes(data).map_err(|_| CodecError::ReadError)?;
+        decode_advance(buffer, len, Self::DATA_KIND == DataKind::Header)?;
+        Ok(val)
     }
 }
 
