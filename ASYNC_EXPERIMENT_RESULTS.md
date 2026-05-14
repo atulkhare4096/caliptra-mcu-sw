@@ -65,7 +65,7 @@ pie title .text Breakdown — Async Architecture (132,858 bytes)
 %%{init: {'theme': 'base'}}%%
 xychart-beta
     title ".text Size Comparison"
-    x-axis ["Sync handlers\n(actual code)", "Async state machine\noverhead", "Base (transport,\nruntime, etc.)"]
+    x-axis ["Sync handlers", "Async overhead", "Base code"]
     y-axis "Bytes" 0 --> 50000
     bar [39000, 49000, 44642]
 ```
@@ -212,13 +212,13 @@ returns to the kernel, which fires the upcall setting the Cell, and the loop rea
 graph LR
     subgraph before["BEFORE: async handler compile output"]
         direction TB
-        enum["enum DispatchState\n  Variant0_PreDigests\n  Variant1_AwaitHash1\n  Variant2_AwaitHash2\n  ...\n  Variant108_Final"] --> poll_fn["fn poll()\n  match state {\n    save/restore locals\n    for every await point\n  }"]
+        enum["enum DispatchState<br/>Variant0_PreDigests<br/>Variant1_AwaitHash1<br/>Variant2_AwaitHash2<br/>...<br/>Variant108_Final"] --> poll_fn["fn poll()<br/>match state: save/restore<br/>locals for every await point"]
         poll_fn --> size1["49,144 bytes"]
     end
 
     subgraph after["AFTER: sync handler compile output"]
         direction TB
-        match_stmt["match req_code {\n  GetDigests => fn()\n  Challenge => fn()\n  ...\n}"] --> stack["Normal stack frames\nNo save/restore\nNo enum variants"]
+        match_stmt["match req_code<br/>GetDigests => fn()<br/>Challenge => fn()<br/>..."] --> stack["Normal stack frames<br/>No save/restore<br/>No enum variants"]
         stack --> size2["~0 bytes overhead"]
     end
 
@@ -259,29 +259,29 @@ regular `fn` while keeping transport async — the hybrid architecture.
 ```mermaid
 graph BT
     subgraph L0["Phase 1 — Blocking Infrastructure"]
-        blocking["blocking.rs\nBlockingResult + yield_wait"]
+        blocking["blocking.rs<br/>BlockingResult + yield_wait"]
     end
 
     subgraph L1["Phase 2 — Syscall Drivers"]
-        mailbox["mailbox.rs\nexecute_blocking()"]
+        mailbox["mailbox.rs<br/>execute_blocking()"]
         flash["flash.rs"]
         dma["dma.rs"]
         doe["doe.rs"]
-        mctp_sys["mctp.rs\n⚡ KEEP ASYNC"]
+        mctp_sys["mctp.rs<br/>⚡ KEEP ASYNC"]
     end
 
     subgraph L2["Phase 3 — Caliptra API"]
         mbox_api["mailbox_api.rs"]
-        crypto["crypto/\nhash, asym, aes_gcm"]
+        crypto["crypto/<br/>hash, asym, aes_gcm"]
         cert["certificate.rs"]
         fw_update["firmware_update/"]
         img_load["image_loading/"]
     end
 
     subgraph L3["Phase 4 — SPDM Handlers ⭐ 49KB savings"]
-        handlers["digests, certificate,\nchallenge, measurements,\nkey_exchange, finish,\nchunk_get, vendor_defined"]
-        ctx["context.rs\ndispatch_request"]
-        spdm_support["cert_store, transcript,\nsignature, session"]
+        handlers["digests, certificate,<br/>challenge, measurements,<br/>key_exchange, finish,<br/>chunk_get, vendor_defined"]
+        ctx["context.rs<br/>dispatch_request"]
+        spdm_support["cert_store, transcript,<br/>signature, session"]
     end
 
     subgraph L4["Phase 5 — Library Daemons"]
@@ -291,7 +291,7 @@ graph BT
     end
 
     subgraph L5["Phase 6 — Platform App"]
-        app["user app\nspdm/mod.rs, riscv.rs"]
+        app["user app<br/>spdm/mod.rs, riscv.rs"]
     end
 
     L1 --> L0
@@ -428,7 +428,7 @@ graph LR
         sig_b["pub async fn execute_mailbox_cmd(...)"]
         body_b[".await on every call"]
         trait_b["#[async_trait(?Send)]"]
-        dep_b["extern crate alloc\nuse Box"]
+        dep_b["extern crate alloc<br/>use Box"]
     end
 
     subgraph after["AFTER"]
