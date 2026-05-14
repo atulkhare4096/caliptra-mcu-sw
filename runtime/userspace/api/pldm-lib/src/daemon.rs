@@ -27,10 +27,14 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 const YIELD_EVERY_ITERATIONS: u32 = 32;
 
-#[derive(Debug)]
 pub enum PldmServiceError {
     StartError,
     StopError,
+}
+impl core::fmt::Debug for PldmServiceError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("PldmServiceError")
+    }
 }
 
 /// Represents a PLDM (Platform Level Data Model) service.

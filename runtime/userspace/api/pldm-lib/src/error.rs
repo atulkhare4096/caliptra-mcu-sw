@@ -6,7 +6,6 @@ use caliptra_mcu_pldm_common::codec::PldmCodecError;
 use caliptra_mcu_pldm_common::error::{PldmError, UtilError};
 
 /// Handle non-protocol specific error conditions.
-#[derive(Debug)]
 pub enum MsgHandlerError {
     Codec(PldmCodecError),
     Transport(TransportError),
@@ -15,4 +14,9 @@ pub enum MsgHandlerError {
     FdOps(FdOpsError),
     FdInitiatorModeError,
     NotReady,
+}
+impl core::fmt::Debug for MsgHandlerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("MsgHandlerError")
+    }
 }

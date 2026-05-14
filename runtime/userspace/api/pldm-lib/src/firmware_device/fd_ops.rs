@@ -19,7 +19,6 @@ use caliptra_mcu_pldm_common::{
 
 use crate::timer::AsyncAlarm;
 
-#[derive(Debug)]
 pub enum FdOpsError {
     DeviceIdentifiersError,
     FirmwareParametersError,
@@ -30,6 +29,11 @@ pub enum FdOpsError {
     ApplyError,
     ActivateError,
     CancelUpdateError,
+}
+impl core::fmt::Debug for FdOpsError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("FdOpsError")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

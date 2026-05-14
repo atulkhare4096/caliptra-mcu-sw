@@ -9,7 +9,6 @@ pub enum PldmTransportType {
     Mctp,
 }
 
-#[derive(Debug)]
 pub enum TransportError {
     DriverError,
     BufferTooSmall,
@@ -18,6 +17,11 @@ pub enum TransportError {
     SendError,
     ResponseNotExpected,
     NoRequestInFlight,
+}
+impl core::fmt::Debug for TransportError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("TransportError")
+    }
 }
 
 pub struct MctpTransport {

@@ -10,10 +10,14 @@ use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_executor::Spawner;
 
-#[derive(Debug)]
 pub enum McuMboxServiceError {
     StartError,
     StopError,
+}
+impl core::fmt::Debug for McuMboxServiceError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("McuMboxServiceError")
+    }
 }
 
 /// MCU mailbox service.

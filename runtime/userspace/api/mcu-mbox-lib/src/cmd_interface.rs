@@ -38,7 +38,6 @@ use caliptra_mcu_mbox_common::messages::{
 use core::sync::atomic::{AtomicBool, Ordering};
 use zerocopy::{FromBytes, IntoBytes};
 
-#[derive(Debug)]
 pub enum MsgHandlerError {
     Transport,
     McuMboxCommon,
@@ -46,6 +45,11 @@ pub enum MsgHandlerError {
     InvalidParams,
     UnsupportedCommand,
     UnauthorizedCommand,
+}
+impl core::fmt::Debug for MsgHandlerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("MsgHandlerError")
+    }
 }
 
 /// Command interface for handling MCU mailbox commands.

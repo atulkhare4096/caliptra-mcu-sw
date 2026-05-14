@@ -273,8 +273,13 @@ mod mailbox_subscribe {
     pub const COMMAND_DONE: u32 = 0;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum MailboxError {
     ErrorCode(ErrorCode),
     MailboxError(u32),
+}
+impl core::fmt::Debug for MailboxError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("MailboxError")
+    }
 }

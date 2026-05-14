@@ -11,10 +11,14 @@ use embassy_executor::Spawner;
 pub const MAX_VDM_MSG_SIZE: usize = 1024;
 
 /// VDM Service error types.
-#[derive(Debug)]
 pub enum VdmServiceError {
     StartError,
     StopError,
+}
+impl core::fmt::Debug for VdmServiceError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("VdmServiceError")
+    }
 }
 
 /// Global running flag for the VDM service.

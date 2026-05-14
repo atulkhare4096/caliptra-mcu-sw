@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 /// Errors that can occur in the VDM library.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum VdmLibError {
     /// Transport error occurred.
     TransportError,
@@ -21,4 +21,9 @@ pub enum VdmLibError {
     NotReady,
     /// Internal error.
     InternalError,
+}
+impl core::fmt::Debug for VdmLibError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("VdmLibError")
+    }
 }
