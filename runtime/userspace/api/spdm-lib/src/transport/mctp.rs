@@ -9,6 +9,7 @@ use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
 use alloc::boxed::Box;
 use bitfield::bitfield;
 use caliptra_mcu_libsyscall_caliptra::mctp::{Mctp, MessageInfo};
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const MCTP_MSG_HEADER_SIZE: usize = 1;
@@ -68,6 +69,20 @@ impl MctpTransport {
             cur_resp_ctx: None,
             cur_req_ctx: None,
         }
+    }
+
+    /// Set up a non-blocking receive-request operation.
+    ///
+    /// Must be called BEFORE passing this transport to `SpdmContext::new()`,
+    /// since the context borrows the transport exclusively.
+    pub fn setup_non_blocking(
+        &mut self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+    ) -> TransportResult<()> {
+        self.mctp
+            .setup_receive_request(buf, notify)
+            .map_err(TransportError::DriverError)
     }
 }
 
@@ -218,5 +233,43 @@ impl SpdmTransport for MctpTransport {
 
     fn header_size(&self) -> usize {
         MCTP_MSG_HEADER_SIZE
+    }
+
+    fn receive_from_buffer<'a>(
+        &mut self,
+        req: &mut MessageBuf<'a>,
+        nb_buf: &[u8],
+        upcall_args: (u32, u32, u32),
+    ) -> TransportResult<bool> {
+        let (recv_len_raw, _, msg_info_raw) = upcall_args;
+        let recv_len = recv_len_raw as usize;
+        if recv_len == 0 {
+            return Err(TransportError::InvalidMessage);
+        }
+
+        req.reset();
+        req.put_data(recv_len).map_err(TransportError::Codec)?;
+        let data = req.data_mut(recv_len).map_err(TransportError::Codec)?;
+        data.copy_from_slice(&nb_buf[..recv_len]);
+        req.trim(recv_len).map_err(TransportError::Codec)?;
+
+        let header = MctpMsgHdr::decode(req).map_err(TransportError::Codec)?;
+        if header.msg_type()
+            != self
+                .mctp
+                .msg_type()
+                .map_err(|_| TransportError::UnexpectedMessageType)?
+        {
+            return Err(TransportError::UnexpectedMessageType);
+        }
+
+        self.cur_resp_ctx = Some(msg_info_raw.into());
+        Ok(false)
+    }
+
+    fn rearm_receive(&self) -> TransportResult<()> {
+        self.mctp
+            .arm_receive_request()
+            .map_err(TransportError::DriverError)
     }
 }

@@ -1704,6 +1704,7 @@ dependencies = [
  "caliptra-mcu-libsyscall-caliptra",
  "caliptra-mcu-libtock_console",
  "caliptra-mcu-libtock_platform",
+ "caliptra-mcu-libtockasync",
  "constant_time_eq 0.4.2",
  "rand 0.8.5",
  "zerocopy",

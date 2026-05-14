@@ -8,6 +8,7 @@ use caliptra_mcu_common_commands::{
 };
 use caliptra_mcu_libapi_caliptra::crypto::rng::Rng;
 use caliptra_mcu_libapi_caliptra::mailbox_api::execute_mailbox_cmd;
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use caliptra_mcu_libsyscall_caliptra::mcu_mbox::MbxCmdStatus;
 use caliptra_mcu_libsyscall_caliptra::otp::Otp;
 use caliptra_mcu_libsyscall_caliptra::{caliptra, otp};
@@ -135,6 +136,69 @@ impl<'a> CmdInterface<'a> {
             .map_err(|_| MsgHandlerError::Transport)?;
 
         Ok(())
+    }
+
+    /// Process a pre-received request and send the response.
+    ///
+    /// Used by the non-blocking poll path. The request data has already been
+    /// validated by `McuMboxTransport::try_receive_request()`.
+    pub fn process_and_respond(
+        &mut self,
+        cmd_id: u32,
+        req: &[u8],
+        resp_buf: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
+        if resp_buf.len() < size_of::<MailboxRespHeader>() {
+            return Err(MsgHandlerError::InvalidParams);
+        }
+
+        let status = match self.process_request(req, cmd_id, resp_buf) {
+            Ok((resp, status)) => {
+                if status == MbxCmdStatus::Complete {
+                    if resp.len() < size_of::<MailboxRespHeader>() {
+                        let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                        return Err(MsgHandlerError::McuMboxCommon);
+                    }
+                    populate_checksum(resp);
+                    self.transport.send_response(resp).map_err(|_| {
+                        let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                        MsgHandlerError::Transport
+                    })?;
+                }
+                status
+            }
+            Err(_) => MbxCmdStatus::Failure,
+        };
+
+        self.transport
+            .finalize_response(status)
+            .map_err(|_| MsgHandlerError::Transport)
+    }
+
+    /// Non-blocking poll: check for a pending command and handle it if ready.
+    ///
+    /// Returns `true` if a command was handled, `false` if nothing was ready.
+    /// `nb_buf` must be the buffer passed to `transport.setup_non_blocking()`.
+    pub fn poll_one(
+        &mut self,
+        nb_buf: &[u8],
+        notify: &UpcallNotification,
+        resp_buf: &mut [u8],
+    ) -> bool {
+        let recv = self.transport.try_receive_request(nb_buf, notify);
+        match recv {
+            Ok(Some((cmd_opcode, recv_len))) => {
+                let _ = self.process_and_respond(cmd_opcode, &nb_buf[..recv_len], resp_buf);
+                self.transport.rearm(notify);
+                true
+            }
+            Ok(None) => false,
+            Err(_) => {
+                let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                self.transport.rearm(notify);
+                false
+            }
+        }
     }
 
     fn process_request<'r>(

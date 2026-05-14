@@ -326,6 +326,87 @@ New driver methods:
   `setup_receive_response()`, `arm_receive_response()`
 - **MCU Mbox:** `setup_receive_command()`, `arm_receive_command()`
 
+### Phase 8: Cooperative Poll Loop
+
+Converted each service from blocking `receive_*()` calls to non-blocking
+`setup_*()` / poll / `arm_*()` and wired them into a single cooperative loop.
+
+#### Transport & CmdInterface changes
+
+Each protocol's transport layer gained three methods:
+
+| Method | Purpose |
+|--------|---------|
+| `setup_non_blocking(buf, notify)` | Share a static buffer with the kernel and register `UpcallNotification` |
+| `try_receive_from_buffer(nb_buf, notify)` | Check notification, copy data, validate headers |
+| `rearm(notify)` | Clear the notification and re-arm the kernel subscription |
+
+Each protocol's command interface gained a `process_and_respond()` method
+(takes pre-received data) and/or `poll_one()` (combines check + process + rearm).
+
+**MCU Mbox:**
+- `McuMboxTransport::setup_non_blocking()`, `try_receive_request()`, `rearm()`
+- `CmdInterface::process_and_respond()`, `poll_one()`
+- App-level `init_polling()` and `poll_one()` using module-level `static mut`
+  with `MaybeUninit` for cross-function state
+
+**SPDM:**
+- `MctpTransport::setup_non_blocking()`
+- `SpdmTransport` trait: `receive_from_buffer()`, `rearm_receive()` (default → `OperationNotSupported`)
+- `MctpTransport` impl: `receive_from_buffer()` (copy + MCTP header validation), `rearm_receive()`
+- `SpdmContext::try_process_message()` — check notify, receive, handle, clear, rearm
+- Refactored: extracted `handle_received_message()` from `process_message()` for reuse
+
+**PLDM:**
+- `PldmTransport::setup_non_blocking()`, `try_receive_from_buffer()`, `rearm()`
+- `CmdInterface::process_and_respond()` extracted from `handle_responder_msg()`
+
+**VDM:**
+- `VdmTransport::setup_non_blocking()`, `try_receive_from_buffer()`, `rearm()`
+- `CmdInterface::process_and_respond()` extracted from `handle_responder_msg()`
+
+#### Cooperative main loop
+
+SPDM hosts the cooperative loop via callback pattern:
+
+```rust
+// spdm/mod.rs
+pub(crate) fn spdm_cooperative_main(poll_others: &mut dyn FnMut()) {
+    // ... full SPDM init with setup_non_blocking() ...
+    loop {
+        ctx.try_process_message(&mut msg_buf, nb_ref, &SPDM_MCTP_NOTIFY).ok();
+        poll_others();
+        DefaultSyscalls::yield_wait();
+    }
+}
+```
+
+MCU Mbox uses `init_polling()` / `poll_one()` split with module-level
+`static mut CMD_IFACE: MaybeUninit<CmdInterface>` for cross-function state:
+
+```rust
+// mcu_mbox/mod.rs
+pub(crate) fn init_polling() -> bool { /* setup + write CMD_IFACE */ }
+pub(crate) fn poll_one() -> bool { /* read CMD_IFACE + poll */ }
+```
+
+Entry point wires everything together:
+
+```rust
+// main.rs
+pub(crate) fn async_main() {
+    image_loader::image_loading_task();   // boot-time, runs to completion
+
+    #[cfg(mbox_features)]
+    let mbox_enabled = mcu_mbox::init_polling();
+
+    spdm::spdm_cooperative_main(&mut || {
+        #[cfg(mbox_features)]
+        if mbox_enabled { mcu_mbox::poll_one(); }
+    });
+}
+```
+
 ---
 
 ## Dependency Status
@@ -412,20 +493,16 @@ embedded C ported to Rust.
 
 ### What got worse
 
-**Concurrency model is now sequential (but fixable).** The async version could
-interleave multiple tasks (SPDM responder, MCU mailbox, PLDM, VDM) within a
-single thread via cooperative scheduling. The sync version currently calls
-them sequentially. However, the non-blocking `UpcallNotification` API
-(Phase 7) provides all the building blocks needed for a cooperative poll
-loop without an executor:
-```rust
-loop {
-    if mctp_notify.is_ready() { handle_mctp(); mctp.arm_receive_request()?; }
-    if mbox_notify.is_ready() { handle_mbox(); mbox.arm_receive_command()?; }
-    S::yield_wait();
-}
-```
-Converting each service to use this pattern is the next step.
+**Concurrency model is cooperative polling.** The async version interleaved
+multiple tasks (SPDM responder, MCU mailbox, PLDM, VDM) within a single
+thread via Embassy's cooperative scheduler. The sync version achieves the
+same effect with a hand-written cooperative loop: SPDM hosts the main loop
+and calls a `poll_others` callback on each iteration, which checks MCU
+Mbox (and any other service) via `UpcallNotification` flags. Each service
+uses `setup_non_blocking()` to register with the kernel, then
+`try_receive_*()` + `rearm()` to process incoming messages without
+blocking. The `yield_wait()` at the end of each loop iteration suspends
+until any kernel upcall fires.
 
 **`SyncMutex` is unsound in general.** The `SyncMutex<T>` added in
 `blocking.rs` uses `UnsafeCell` and returns `&mut T` from `.lock()` without
@@ -455,19 +532,18 @@ build, easier to debug. The 37% flash reduction alone justifies it for
 resource-constrained targets.
 
 For a **production multi-service firmware** that needs SPDM + PLDM + MCU
-mailbox + VDM running concurrently, the infrastructure is now in place
-(Phase 7's `UpcallNotification` + `setup_*` / `arm_*` API) but the services
-have not yet been converted to use it. The remaining work is purely
-application-level: replace each service's blocking `receive_*()` call with
-the non-blocking `setup_*()` / poll / `arm_*()` pattern inside a shared
-cooperative loop.
+mailbox + VDM running concurrently, the cooperative poll loop (Phase 8)
+provides concurrent service processing without an async runtime. SPDM and
+MCU Mbox are fully integrated into the cooperative loop; PLDM and VDM have
+the non-blocking infrastructure in place and can be wired into the same
+loop when their test features are enabled alongside SPDM.
 
 The recommended path forward is:
 1. ~~Fix the remaining broken call sites~~ ✅ Done.
 2. ~~Remove all Embassy dependencies~~ ✅ Done.
 3. ~~Add non-blocking upcall primitives (UpcallNotification)~~ ✅ Done.
-4. Convert each service's main loop to use `setup_*` / `is_ready()` /
-   `arm_*` instead of blocking `receive_*` calls.
-5. Wire up a top-level cooperative poll loop that checks all
-   `UpcallNotification` flags and `yield_wait()`s when idle.
+4. ~~Convert each service's main loop to use `setup_*` / `is_ready()` /
+   `arm_*` instead of blocking `receive_*` calls.~~ ✅ Done (Phase 8).
+5. ~~Wire up a top-level cooperative poll loop that checks all
+   `UpcallNotification` flags and `yield_wait()`s when idle.~~ ✅ Done (Phase 8).
 

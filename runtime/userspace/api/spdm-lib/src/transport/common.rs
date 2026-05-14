@@ -30,6 +30,25 @@ pub trait SpdmTransport {
     fn random_data_size_bytes(&self) -> usize {
         0 // No secure message random data by default
     }
+
+    /// Populate `req` from a pre-received buffer (non-blocking path).
+    ///
+    /// `nb_buf` is the kernel-shared buffer containing raw transport data.
+    /// `upcall_args` are the (arg0, arg1, arg2) from the `UpcallNotification`.
+    /// Returns the `secure` flag, same as `receive_request`.
+    fn receive_from_buffer<'a>(
+        &mut self,
+        _req: &mut MessageBuf<'a>,
+        _nb_buf: &[u8],
+        _upcall_args: (u32, u32, u32),
+    ) -> TransportResult<bool> {
+        Err(TransportError::OperationNotSupported)
+    }
+
+    /// Re-arm the non-blocking receive after processing.
+    fn rearm_receive(&self) -> TransportResult<()> {
+        Err(TransportError::OperationNotSupported)
+    }
 }
 
 #[derive(Debug)]

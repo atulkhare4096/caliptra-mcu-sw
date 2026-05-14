@@ -20,6 +20,7 @@ use crate::state::{ConnectionState, State};
 use crate::transcript::{Transcript, TranscriptContext};
 use crate::transport::common::SpdmTransport;
 use crate::vdm_handler::VdmHandler;
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use caliptra_mcu_libapi_caliptra::crypto::aes_gcm::Aes256GcmTag;
 use caliptra_mcu_libapi_caliptra::crypto::asym::*;
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
@@ -83,6 +84,44 @@ impl<'a> SpdmContext<'a> {
             
             .map_err(SpdmError::Transport)?;
 
+        self.handle_received_message(msg_buf, secure)
+    }
+
+    /// Non-blocking poll: check for a pending message and handle it if ready.
+    ///
+    /// `nb_buf` must be the buffer passed to `MctpTransport::setup_non_blocking()`.
+    /// `notify` must be the notification passed to `setup_non_blocking()`.
+    ///
+    /// Returns `Ok(true)` if a message was handled, `Ok(false)` if nothing
+    /// was ready, or `Err` on processing failure.
+    pub fn try_process_message(
+        &mut self,
+        msg_buf: &mut MessageBuf<'a>,
+        nb_buf: &[u8],
+        notify: &UpcallNotification,
+    ) -> SpdmResult<bool> {
+        if !notify.is_ready() {
+            return Ok(false);
+        }
+        let args = notify.args();
+        let secure = self
+            .transport
+            .receive_from_buffer(msg_buf, nb_buf, args)
+            .map_err(SpdmError::Transport)?;
+        self.handle_received_message(msg_buf, secure)?;
+        notify.clear();
+        self.transport
+            .rearm_receive()
+            .map_err(SpdmError::Transport)?;
+        Ok(true)
+    }
+
+    /// Process a message that has already been received into `msg_buf`.
+    fn handle_received_message(
+        &mut self,
+        msg_buf: &mut MessageBuf<'a>,
+        secure: bool,
+    ) -> SpdmResult<()> {
         // Reset active session_id
         self.session_mgr.reset_active_session_id();
 

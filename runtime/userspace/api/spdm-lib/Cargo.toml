@@ -16,6 +16,7 @@ caliptra-mcu-libapi-caliptra.workspace = true
 caliptra-mcu-libsyscall-caliptra.workspace = true
 caliptra-mcu-libtock_platform.workspace = true
 caliptra-mcu-libtock_console.workspace = true
+caliptra-mcu-libtockasync.workspace = true
 zerocopy.workspace = true
 
 [dev-dependencies]

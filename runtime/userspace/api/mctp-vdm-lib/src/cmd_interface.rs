@@ -46,6 +46,17 @@ impl<'a> CmdInterface<'a> {
             
             .map_err(|_| VdmLibError::TransportError)?;
 
+        self.process_and_respond(msg_buf, req_len)
+    }
+
+    /// Process a pre-received request and send the response.
+    ///
+    /// Used by both the blocking path and the non-blocking poll path.
+    pub fn process_and_respond(
+        &mut self,
+        msg_buf: &mut [u8],
+        req_len: usize,
+    ) -> Result<(), VdmLibError> {
         // Process the request and prepare the response.
         let resp_len = self.process_request(msg_buf, req_len)?;
 

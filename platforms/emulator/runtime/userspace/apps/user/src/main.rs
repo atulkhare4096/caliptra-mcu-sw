@@ -68,18 +68,36 @@ fn start() {
 }
 
 pub(crate) fn async_main() {
-    // Run tasks directly in sync mode.
-    // Note: only the first blocking task will actually run in a single-threaded model.
+    // Boot-time operations (run to completion)
+    image_loader::image_loading_task();
 
+    // Initialize MCU Mbox for cooperative polling (if test features enabled)
+    #[cfg(any(
+        feature = "test-mcu-mbox-cmds",
+        feature = "test-mcu-mbox-fips-self-test",
+        feature = "test-mcu-mbox-fips-periodic",
+        feature = "test-caliptra-util-host-validator"
+    ))]
+    let mbox_enabled = mcu_mbox::init_polling();
+
+    // Runtime: cooperative service loop.
+    // SPDM hosts the loop and calls poll_others() on each iteration
+    // so other services can make progress concurrently.
     #[cfg(not(any(
         feature = "test-firmware-update-streaming",
         feature = "test-firmware-update-flash"
     )))]
-    spdm::spdm_task();
-
-    // These would run if spdm_task returns (normally it doesn't):
-    image_loader::image_loading_task();
-    mcu_mbox::mcu_mbox_task();
+    spdm::spdm_cooperative_main(&mut || {
+        #[cfg(any(
+            feature = "test-mcu-mbox-cmds",
+            feature = "test-mcu-mbox-fips-self-test",
+            feature = "test-mcu-mbox-fips-periodic",
+            feature = "test-caliptra-util-host-validator"
+        ))]
+        if mbox_enabled {
+            mcu_mbox::poll_one();
+        }
+    });
 
     #[cfg(feature = "test-mcu-mbox-fips-periodic")]
     caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task();

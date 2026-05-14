@@ -59,6 +59,18 @@ impl<'a> CmdInterface<'a> {
             
             .map_err(MsgHandlerError::Transport)?;
 
+        self.process_and_respond(transport, msg_buf)
+    }
+
+    /// Process a pre-received request in `msg_buf` and send the response.
+    ///
+    /// Used by both the blocking path (after `receive_request`) and the
+    /// non-blocking poll path (after `try_receive_from_buffer`).
+    pub fn process_and_respond(
+        &self,
+        transport: &mut MctpTransport,
+        msg_buf: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
         // Process the request
         let resp_len = self.process_request(msg_buf)?;
 
