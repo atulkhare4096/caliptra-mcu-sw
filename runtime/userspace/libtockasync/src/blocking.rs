@@ -74,7 +74,7 @@ fn do_subscribe<S: Syscalls>(
 }
 
 /// Issue an ALLOW_RW syscall (share a mutable buffer with the kernel).
-fn do_allow_rw<S: Syscalls>(
+pub fn do_allow_rw<S: Syscalls>(
     driver_num: u32,
     buffer_num: u32,
     buffer: &mut [u8],
@@ -98,7 +98,7 @@ fn do_allow_rw<S: Syscalls>(
 }
 
 /// Issue an ALLOW_RO syscall (share an immutable buffer with the kernel).
-fn do_allow_ro<S: Syscalls>(
+pub fn do_allow_ro<S: Syscalls>(
     driver_num: u32,
     buffer_num: u32,
     buffer: &[u8],
@@ -322,5 +322,135 @@ impl<T, F: Fn() -> T> SyncLazy<T, F> {
             *slot = Some((self.init)());
         }
         slot.as_ref().unwrap()
+    }
+}
+
+// =============================================================================
+// Non-blocking upcall notification primitives
+// =============================================================================
+
+use portable_atomic::{AtomicBool, Ordering};
+
+/// A notification flag set by Tock kernel upcalls.
+///
+/// Place in a `static` and pass its address as upcall data. The kernel upcall
+/// sets the flag, and the poll loop checks it via `is_ready()`.
+///
+/// The three upcall arguments (arg0, arg1, arg2) are stored so the caller can
+/// retrieve them after detecting readiness.
+///
+/// # Usage Pattern
+/// ```ignore
+/// static NOTIFY: UpcallNotification = UpcallNotification::new();
+///
+/// // Setup: ALLOW + SUBSCRIBE + COMMAND (non-blocking)
+/// subscribe_notify::<S>(driver_num, subscribe_num, &NOTIFY)?;
+/// S::command(driver_num, cmd, arg1, arg2)?;
+///
+/// // Poll loop (cooperative with other drivers):
+/// loop {
+///     if NOTIFY.is_ready() {
+///         let (a0, a1, a2) = NOTIFY.take_args();
+///         // process data in ALLOW'd buffer...
+///         // re-arm:
+///         NOTIFY.clear();
+///         S::command(driver_num, cmd, arg1, arg2)?;
+///     }
+///     // ... poll other drivers ...
+///     S::yield_no_wait();
+/// }
+/// ```
+pub struct UpcallNotification {
+    ready: AtomicBool,
+    args: core::cell::UnsafeCell<(u32, u32, u32)>,
+}
+
+// SAFETY: single-threaded Tock userspace. AtomicBool is used because
+// the upcall sets it and the main loop reads it (no true concurrency,
+// but the atomic provides the correct memory ordering guarantee).
+unsafe impl Sync for UpcallNotification {}
+unsafe impl Send for UpcallNotification {}
+
+impl UpcallNotification {
+    /// Create a new notification (not ready).
+    pub const fn new() -> Self {
+        Self {
+            ready: AtomicBool::new(false),
+            args: core::cell::UnsafeCell::new((0, 0, 0)),
+        }
+    }
+
+    /// Check if the upcall has fired since last `clear()`.
+    #[inline]
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+
+    /// Retrieve the upcall arguments. Only valid when `is_ready()` is true.
+    #[inline]
+    pub fn args(&self) -> (u32, u32, u32) {
+        // SAFETY: single-threaded; caller checks is_ready() first.
+        unsafe { *self.args.get() }
+    }
+
+    /// Clear the notification flag so the next upcall can be detected.
+    #[inline]
+    pub fn clear(&self) {
+        self.ready.store(false, Ordering::Release);
+    }
+
+    /// Block (yield_wait) until the upcall fires. Returns the arguments.
+    pub fn wait<S: Syscalls>(&self) -> (u32, u32, u32) {
+        loop {
+            if self.is_ready() {
+                return self.args();
+            }
+            S::yield_wait();
+        }
+    }
+}
+
+/// Upcall handler for `UpcallNotification`. Stores args and sets the ready flag.
+///
+/// This is the function pointer passed to the kernel via SUBSCRIBE.
+extern "C" fn notify_upcall<S: Syscalls>(arg0: u32, arg1: u32, arg2: u32, data: Register) {
+    let exit: ExitOnDrop<S> = Default::default();
+    let ptr: usize = data.into();
+    let notify = ptr as *const UpcallNotification;
+    // SAFETY: `notify` points to a valid `static UpcallNotification`.
+    unsafe {
+        (*(*notify).args.get()) = (arg0, arg1, arg2);
+        (*notify).ready.store(true, Ordering::Release);
+    }
+    core::mem::forget(exit);
+}
+
+/// Register a SUBSCRIBE that targets an `UpcallNotification` (non-blocking).
+///
+/// After this call, when the kernel fires the upcall, the notification's
+/// `is_ready()` will return true and `args()` will contain the upcall arguments.
+pub fn subscribe_notify<S: Syscalls>(
+    driver_num: u32,
+    subscribe_num: u32,
+    notify: &'static UpcallNotification,
+) -> Result<(), ErrorCode> {
+    let upcall_fcn = (notify_upcall::<S> as *const ()) as usize;
+    let upcall_data = (notify as *const UpcallNotification) as usize;
+
+    let [r0, r1, _, _] = unsafe {
+        S::syscall4::<{ syscall_class::SUBSCRIBE }>([
+            driver_num.into(),
+            subscribe_num.into(),
+            upcall_fcn.into(),
+            upcall_data.into(),
+        ])
+    };
+    let return_variant: ReturnVariant = r0.as_u32().into();
+    match return_variant {
+        return_variant::SUCCESS_2_U32 => Ok(()),
+        return_variant::FAILURE_2_U32 => {
+            Err(r1.as_u32().try_into().unwrap_or(ErrorCode::Fail))
+        }
+        _ => Err(ErrorCode::Fail),
     }
 }

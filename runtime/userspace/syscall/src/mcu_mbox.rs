@@ -2,7 +2,7 @@
 
 use crate::DefaultSyscalls;
 use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::blocking;
+use caliptra_mcu_libtockasync::blocking::{self, UpcallNotification};
 use core::marker::PhantomData;
 
 pub type CmdCode = u32;
@@ -130,6 +130,40 @@ impl<S: Syscalls> McuMbox<S> {
     /// * `Err(ErrorCode)` if the operation fails.
     pub fn finish_response(&self, status: MbxCmdStatus) -> Result<(), ErrorCode> {
         S::command(self.driver_num, command::FINISH_RESP, status.into(), 0)
+            .to_result::<(), ErrorCode>()
+    }
+
+    // =========================================================================
+    // Non-blocking (upcall-driven) API
+    // =========================================================================
+
+    /// Set up a non-blocking receive-command operation.
+    ///
+    /// Shares `buf` with the kernel, registers the upcall on `notify`, and
+    /// issues the RECEIVE_REQUEST command. Returns immediately.
+    ///
+    /// When a command arrives, `notify.is_ready()` becomes true and the
+    /// upcall args contain (cmd_code, recv_len, 0). The data is in `buf`.
+    ///
+    /// After processing, call `notify.clear()` then `arm_receive_command()`
+    /// to re-arm.
+    pub fn setup_receive_command(
+        &self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+    ) -> Result<(), ErrorCode> {
+        if buf.is_empty() {
+            return Err(ErrorCode::Invalid);
+        }
+        blocking::do_allow_rw::<S>(self.driver_num, rw_allow::REQUEST, buf)?;
+        blocking::subscribe_notify::<S>(self.driver_num, subscribe::REQUEST_RECEIVED, notify)?;
+        S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
+            .to_result::<(), ErrorCode>()
+    }
+
+    /// Re-arm the receive-command operation after processing the previous one.
+    pub fn arm_receive_command(&self) -> Result<(), ErrorCode> {
+        S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
             .to_result::<(), ErrorCode>()
     }
 }

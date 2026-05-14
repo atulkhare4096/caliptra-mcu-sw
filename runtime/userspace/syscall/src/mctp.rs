@@ -2,7 +2,7 @@
 
 use crate::DefaultSyscalls;
 use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::blocking;
+use caliptra_mcu_libtockasync::blocking::{self, UpcallNotification};
 use core::marker::PhantomData;
 
 type EndpointId = u8;
@@ -191,6 +191,82 @@ impl<S: Syscalls> Mctp<S> {
             driver_num::MCTP_CALIPTRA => Ok(0x7E),
             _ => Err(ErrorCode::Invalid)?,
         }
+    }
+
+    // =========================================================================
+    // Non-blocking (upcall-driven) API
+    // =========================================================================
+
+    /// Set up a non-blocking receive-request operation.
+    ///
+    /// Shares `buf` with the kernel, registers the upcall on `notify`, and
+    /// issues the RECEIVE_REQUEST command. Returns immediately.
+    ///
+    /// When a request arrives, `notify.is_ready()` becomes true and the
+    /// upcall args contain (recv_len, 0, msg_info). The data is in `buf`.
+    ///
+    /// After processing, call `notify.clear()` then `arm_receive_request()`
+    /// to re-arm.
+    pub fn setup_receive_request(
+        &self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+    ) -> Result<(), ErrorCode> {
+        if buf.is_empty() {
+            return Err(ErrorCode::Invalid);
+        }
+        blocking::do_allow_rw::<S>(self.driver_num, allow_rw::READ_REQUEST, buf)?;
+        blocking::subscribe_notify::<S>(self.driver_num, subscribe::RECEIVED_REQUEST, notify)?;
+        S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
+            .to_result::<(), ErrorCode>()
+    }
+
+    /// Re-arm the receive-request operation after processing the previous one.
+    ///
+    /// The ALLOW and SUBSCRIBE are still active; only the COMMAND needs
+    /// to be re-issued to tell the kernel to deliver the next message.
+    pub fn arm_receive_request(&self) -> Result<(), ErrorCode> {
+        S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
+            .to_result::<(), ErrorCode>()
+    }
+
+    /// Set up a non-blocking receive-response operation.
+    ///
+    /// Shares `buf` with the kernel, registers the upcall on `notify`, and
+    /// issues the RECEIVE_RESPONSE command. Returns immediately.
+    ///
+    /// When a response arrives, `notify.is_ready()` becomes true and the
+    /// upcall args contain (recv_len, 0, msg_info). The data is in `buf`.
+    pub fn setup_receive_response(
+        &self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+        tag: Tag,
+        src_eid: u8,
+    ) -> Result<(), ErrorCode> {
+        if buf.is_empty() || tag > 0x7 {
+            return Err(ErrorCode::Invalid);
+        }
+        blocking::do_allow_rw::<S>(self.driver_num, allow_rw::READ_RESPONSE, buf)?;
+        blocking::subscribe_notify::<S>(self.driver_num, subscribe::RECEIVED_RESPONSE, notify)?;
+        S::command(
+            self.driver_num,
+            command::RECEIVE_RESPONSE,
+            src_eid as u32,
+            tag as u32,
+        )
+        .to_result::<(), ErrorCode>()
+    }
+
+    /// Re-arm the receive-response operation.
+    pub fn arm_receive_response(&self, tag: Tag, src_eid: u8) -> Result<(), ErrorCode> {
+        S::command(
+            self.driver_num,
+            command::RECEIVE_RESPONSE,
+            src_eid as u32,
+            tag as u32,
+        )
+        .to_result::<(), ErrorCode>()
     }
 }
 
