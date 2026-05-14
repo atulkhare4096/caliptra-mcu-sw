@@ -18,7 +18,7 @@ use caliptra_mcu_pldm_common::util::fw_component::FirmwareComponent;
 use caliptra_mcu_pldm_lib::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicBool, Ordering};
-use embassy_sync::lazy_lock::LazyLock;
+use caliptra_mcu_libtockasync::blocking::SyncLazy;
 
 const FD_DESCRIPTORS_COUNT: usize = 1;
 const FD_FW_COMPONENTS_COUNT: usize = 1;
@@ -28,12 +28,12 @@ const UUID: [u8; 16] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
 ];
 
-static DESCRIPTORS: LazyLock<[Descriptor; FD_DESCRIPTORS_COUNT]> =
-    LazyLock::new(|| [Descriptor::new(DescriptorType::Uuid, &UUID).unwrap()]);
+static DESCRIPTORS: SyncLazy<[Descriptor; FD_DESCRIPTORS_COUNT]> =
+    SyncLazy::new(|| [Descriptor::new(DescriptorType::Uuid, &UUID).unwrap()]);
 
 // This is dummy firmware parameter for development. The actual firmware parameters are
 // retrieved from the SoC manifest via mailbox commands.
-static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
+static FIRMWARE_PARAMS: SyncLazy<FirmwareParameters> = SyncLazy::new(|| {
     let active_firmware_string = PldmFirmwareString::new("UTF-8", "soc-fw-1.0").unwrap();
     let active_firmware_version =
         PldmFirmwareVersion::new(0x12345678, &active_firmware_string, Some("20250210"));

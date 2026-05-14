@@ -7,7 +7,6 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-async-trait.workspace = true
 caliptra-mcu-libsyscall-caliptra.workspace = true
 caliptra-mcu-libtock_platform.workspace = true
 caliptra-mcu-config.workspace = true
@@ -15,5 +14,4 @@ caliptra-mcu-config-emulator.workspace = true
 zerocopy.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-embassy-executor = { version = "0.9.1", features = ["arch-riscv32"] }
 embedded-alloc.workspace = true

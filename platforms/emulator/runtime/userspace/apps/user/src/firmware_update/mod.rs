@@ -93,8 +93,8 @@ mod external_memory {
     const DMA_TRANSFER_SIZE: usize = 512;
     const DEVICE_EXTERNAL_SRAM_BASE: u64 = 0xB00C0000;
 
-    pub static STAGING_MEMORY: embassy_sync::lazy_lock::LazyLock<ExternalRAM> =
-        embassy_sync::lazy_lock::LazyLock::new(|| ExternalRAM::new(&EMULATED_DMA_MAPPING));
+    pub static STAGING_MEMORY: caliptra_mcu_libtockasync::blocking::SyncLazy<ExternalRAM> =
+        caliptra_mcu_libtockasync::blocking::SyncLazy::new(|| ExternalRAM::new(&EMULATED_DMA_MAPPING));
 
     pub struct ExternalRAM {
         dma_syscall: DMASyscall,

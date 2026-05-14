@@ -260,3 +260,67 @@ impl<T> SyncMutex<T> {
         unsafe { &mut *self.inner.get() }
     }
 }
+
+/// Drop-in replacement for `embassy_sync::blocking_mutex::Mutex<CriticalSectionRawMutex, T>`.
+///
+/// Provides the same `.lock(|&T| ...)` closure API used throughout the codebase.
+/// Safe in single-threaded Tock userspace — the closure runs inline without
+/// actual locking since preemption is impossible.
+pub struct CsMutex<T> {
+    inner: core::cell::UnsafeCell<T>,
+}
+
+// SAFETY: single-threaded Tock userspace — no concurrent access possible.
+unsafe impl<T> Sync for CsMutex<T> {}
+unsafe impl<T> Send for CsMutex<T> {}
+
+impl<T> CsMutex<T> {
+    pub const fn new(val: T) -> Self {
+        Self {
+            inner: core::cell::UnsafeCell::new(val),
+        }
+    }
+
+    /// Execute a closure with access to the inner value.
+    ///
+    /// Matches embassy's `blocking_mutex::Mutex::lock()` API.
+    pub fn lock<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        // Safety: single-threaded, non-preemptive Tock userspace.
+        let inner = unsafe { &*self.inner.get() };
+        f(inner)
+    }
+}
+
+/// A lazily-initialized static value.
+///
+/// Replacement for `embassy_sync::lazy_lock::LazyLock`. Safe for single-threaded
+/// Tock userspace: initialization runs at most once (on first `.get()` call).
+///
+/// # Safety
+/// Uses `UnsafeCell` internally. Sound only in single-threaded, non-preemptive
+/// environments (Tock userspace). Do not use in multi-threaded contexts.
+pub struct SyncLazy<T, F = fn() -> T> {
+    init: F,
+    value: core::cell::UnsafeCell<Option<T>>,
+}
+
+// SAFETY: single-threaded Tock userspace — no concurrent access possible.
+unsafe impl<T, F> Sync for SyncLazy<T, F> {}
+
+impl<T, F: Fn() -> T> SyncLazy<T, F> {
+    pub const fn new(init: F) -> Self {
+        Self {
+            init,
+            value: core::cell::UnsafeCell::new(None),
+        }
+    }
+
+    pub fn get(&self) -> &T {
+        // SAFETY: single-threaded, non-preemptive environment.
+        let slot = unsafe { &mut *self.value.get() };
+        if slot.is_none() {
+            *slot = Some((self.init)());
+        }
+        slot.as_ref().unwrap()
+    }
+}

@@ -11,7 +11,6 @@ caliptra-api.workspace = true
 caliptra-error.workspace = true
 caliptra-auth-man-types.workspace = true
 critical-section.workspace = true
-embassy-executor.workspace = true
 caliptra-mcu-libapi-caliptra.workspace = true
 caliptra-mcu-libsyscall-caliptra.workspace = true
 caliptra-mcu-libtock_alarm.workspace = true
@@ -20,7 +19,7 @@ caliptra-mcu-libtock_debug_panic.workspace = true
 caliptra-mcu-libtock_platform.workspace = true
 caliptra-mcu-libtock_runtime.workspace = true
 caliptra-mcu-libtock.workspace = true
-caliptra-mcu-libtockasync.workspace = true
+caliptra-mcu-libtockasync = { workspace = true, features = ["executor"] }
 caliptra-mcu-config-emulator.workspace = true
 caliptra-mcu-config-fpga.workspace = true
 caliptra-mcu-pldm-common.workspace = true
@@ -32,7 +31,6 @@ zerocopy.workspace = true
 caliptra-mcu-libtock_unittest.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-embassy-executor = { version = "0.9.1", features = ["arch-riscv32"] }
 embedded-alloc.workspace = true
 
 [features]

@@ -6,8 +6,7 @@
 //! operations (CHUNK_SEND reassembly and CHUNK_GET response chunking).
 
 use caliptra_mcu_spdm_lib::chunk_ctx::LargeMsgBufProvider;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::blocking_mutex::Mutex;
+use caliptra_mcu_libtockasync::blocking::CsMutex as Mutex;
 use static_cell::StaticCell;
 
 /// Buffer size for large SPDM messages.
@@ -19,7 +18,7 @@ static LARGE_MSG_BUF_STORAGE: StaticCell<[u8; LARGE_MSG_BUF_SIZE]> = StaticCell:
 
 /// Holds the buffer when it is not checked out by a responder.
 /// `Some(buf)` = available, `None` = in use by a responder.
-static SHARED_BUF: Mutex<CriticalSectionRawMutex, core::cell::RefCell<Option<&'static mut [u8]>>> =
+static SHARED_BUF: Mutex<core::cell::RefCell<Option<&'static mut [u8]>>> =
     Mutex::new(core::cell::RefCell::new(None));
 
 /// Initialize the shared buffer. Must be called once before spawning responders.

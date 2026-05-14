@@ -3,7 +3,7 @@
 use crate::control_context::ProtocolCapability;
 use caliptra_mcu_pldm_common::protocol::base::{PldmControlCmd, PldmSupportedType};
 use caliptra_mcu_pldm_common::protocol::firmware_update::{FwUpdateCmd, PldmFdTime};
-use embassy_sync::lazy_lock::LazyLock;
+use caliptra_mcu_libtockasync::blocking::SyncLazy;
 
 pub const PLDM_PROTOCOL_CAP_COUNT: usize = 2;
 pub const FD_MAX_XFER_SIZE: usize = 512; // Arbitrary limit and change as needed.
@@ -12,9 +12,9 @@ pub const DEFAULT_FD_T2_RETRY_TIME: PldmFdTime = 5000; // FD_T2 retry request fo
 pub const INSTANCE_ID_COUNT: u8 = 32;
 pub const UA_EID: u8 = 8; // Update Agent Endpoint ID for testing.
 
-pub static PLDM_PROTOCOL_CAPABILITIES: LazyLock<
+pub static PLDM_PROTOCOL_CAPABILITIES: SyncLazy<
     [ProtocolCapability<'static>; PLDM_PROTOCOL_CAP_COUNT],
-> = LazyLock::new(|| {
+> = SyncLazy::new(|| {
     [
         ProtocolCapability {
             pldm_type: PldmSupportedType::Base,

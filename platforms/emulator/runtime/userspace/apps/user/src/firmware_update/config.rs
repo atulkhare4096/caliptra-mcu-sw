@@ -8,11 +8,11 @@ pub mod fw_update_consts {
             PldmFirmwareVersion,
         },
     };
-    use embassy_sync::lazy_lock::LazyLock;
+    use caliptra_mcu_libtockasync::blocking::SyncLazy;
 
     pub const FD_FW_COMPONENTS_COUNT: usize = 1;
     #[allow(unused)]
-    pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
+    pub static FIRMWARE_PARAMS: SyncLazy<FirmwareParameters> = SyncLazy::new(|| {
         let active_firmware_string = PldmFirmwareString::new("UTF-8", "soc-fw-1.0").unwrap();
         let active_firmware_version =
             PldmFirmwareVersion::new(0x12345678, &active_firmware_string, Some("20250210"));
@@ -45,8 +45,8 @@ pub mod fw_update_consts {
     ];
 
     #[allow(unused)]
-    pub static DESCRIPTOR: embassy_sync::lazy_lock::LazyLock<[Descriptor; 1]> =
-        embassy_sync::lazy_lock::LazyLock::new(|| {
+    pub static DESCRIPTOR: caliptra_mcu_libtockasync::blocking::SyncLazy<[Descriptor; 1]> =
+        caliptra_mcu_libtockasync::blocking::SyncLazy::new(|| {
             [Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID).unwrap()]
         });
 

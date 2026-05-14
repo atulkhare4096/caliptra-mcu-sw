@@ -163,17 +163,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.89"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.109",
-]
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -282,12 +271,6 @@ name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
-
-[[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
@@ -853,7 +836,6 @@ dependencies = [
 name = "caliptra-mcu-common-commands"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-api",
  "caliptra-mcu-mbox-common",
  "zerocopy",
@@ -1324,7 +1306,6 @@ dependencies = [
 name = "caliptra-mcu-libapi-caliptra"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-api",
  "caliptra-auth-man-types",
  "caliptra-error",
@@ -1339,8 +1320,6 @@ dependencies = [
  "caliptra-mcu-pldm-lib",
  "caliptra-ocp-eat",
  "dpe",
- "embassy-executor",
- "embassy-sync",
  "embedded-alloc",
  "futures",
  "zerocopy",
@@ -1350,12 +1329,10 @@ dependencies = [
 name = "caliptra-mcu-libapi-emulated-caliptra"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-mcu-config",
  "caliptra-mcu-config-emulator",
  "caliptra-mcu-libsyscall-caliptra",
  "caliptra-mcu-libtock_platform",
- "embassy-executor",
  "embedded-alloc",
  "zerocopy",
 ]
@@ -1520,8 +1497,6 @@ dependencies = [
  "caliptra-mcu-libtock_runtime",
  "caliptra-mcu-libtockasync",
  "caliptra-mcu-mbox-common",
- "embassy-executor",
- "embassy-sync",
  "zerocopy",
 ]
 
@@ -1538,7 +1513,6 @@ dependencies = [
 name = "caliptra-mcu-mctp-vdm-lib"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-mcu-common-commands",
  "caliptra-mcu-libsyscall-caliptra",
  "caliptra-mcu-libtock_alarm",
@@ -1548,8 +1522,6 @@ dependencies = [
  "caliptra-mcu-libtock_unittest",
  "caliptra-mcu-libtockasync",
  "caliptra-mcu-mctp-vdm-common",
- "embassy-executor",
- "embassy-sync",
  "embedded-alloc",
  "zerocopy",
 ]
@@ -1604,7 +1576,6 @@ dependencies = [
 name = "caliptra-mcu-pldm-lib"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-mcu-libsyscall-caliptra",
  "caliptra-mcu-libtock_alarm",
  "caliptra-mcu-libtock_console",
@@ -1613,8 +1584,6 @@ dependencies = [
  "caliptra-mcu-libtock_unittest",
  "caliptra-mcu-libtockasync",
  "caliptra-mcu-pldm-common",
- "embassy-executor",
- "embassy-sync",
  "embedded-alloc",
 ]
 
@@ -1728,7 +1697,6 @@ name = "caliptra-mcu-spdm-lib"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "async-trait",
  "bitfield",
  "caliptra-api",
  "caliptra-mcu-common-commands",
@@ -2752,20 +2720,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fc328bf943af66b80b98755db9106bf7e7471b0cf47dc8559cd9a6be504cc9c"
 
 [[package]]
-name = "embassy-sync"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d2c8cdff05a7a51ba0087489ea44b0b1d97a296ca6b1d6d1a33ea7423d34049"
-dependencies = [
- "cfg-if",
- "critical-section",
- "embedded-io-async",
- "futures-sink",
- "futures-util",
- "heapless",
-]
-
-[[package]]
 name = "embedded-alloc"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2780,21 +2734,6 @@ name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
-
-[[package]]
-name = "embedded-io"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
-
-[[package]]
-name = "embedded-io-async"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff09972d4073aa8c299395be75161d582e7629cd663171d62af73c8d50dba3f"
-dependencies = [
- "embedded-io",
-]
 
 [[package]]
 name = "emulator-cbinding"
@@ -2866,7 +2805,6 @@ dependencies = [
  "caliptra-mcu-pldm-common",
  "caliptra-mcu-romtime",
  "critical-section",
- "embassy-executor",
  "embedded-alloc",
  "portable-atomic",
  "zerocopy",
@@ -3140,15 +3078,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hash32"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3159,16 +3088,6 @@ name = "hashbrown"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
-
-[[package]]
-name = "heapless"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
-dependencies = [
- "hash32",
- "stable_deref_trait",
-]
 
 [[package]]
 name = "heck"
@@ -5506,7 +5425,6 @@ name = "user-app"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "async-trait",
  "caliptra-api",
  "caliptra-mcu-common-commands",
  "caliptra-mcu-config",
@@ -5533,8 +5451,6 @@ dependencies = [
  "caliptra-ocp-eat",
  "constant_time_eq 0.4.2",
  "critical-section",
- "embassy-executor",
- "embassy-sync",
  "embedded-alloc",
  "portable-atomic",
  "static_cell",
