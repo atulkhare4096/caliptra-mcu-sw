@@ -2806,6 +2806,7 @@ dependencies = [
  "caliptra-mcu-pldm-common",
  "caliptra-mcu-romtime",
  "critical-section",
+ "embassy-executor",
  "embedded-alloc",
  "portable-atomic",
  "zerocopy",

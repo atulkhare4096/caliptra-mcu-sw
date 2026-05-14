@@ -18,15 +18,6 @@ behavioral trade-offs and better maintainability than a fully sync alternative.
 The hybrid and fully sync architectures produce **identical binaries** — the async
 transport shell (embassy executor, 2 await points per task) adds no measurable overhead.
 
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '14px'}}}%%
-pie title Flash Breakdown — Original vs. Hybrid
-    "Eliminated: async state machine overhead" : 57002
-    "Hybrid flash usage" : 93956
-```
-
-Flash usage: **93,956 / 98,304 bytes** (95.5% of budget, 4.3KB headroom).
-
 ## The Problem: Async State Machines in Handlers
 
 The root cause of the 57KB bloat is a single compiler-generated function:
@@ -272,6 +263,151 @@ fn main_loop() {
 The hybrid model is strictly better: identical binary size, identical handler code,
 but with task isolation, no scheduling bugs, isolated testability, and upstream
 alignment — for ~1–2KB of overhead that manual scheduler code would offset anyway.
+
+---
+
+## Testing: Concurrent Task Execution
+
+The cooperative poll loop is validated by `test_cooperative_poll_loop_mbox` in
+`tests/integration/src/runtime/test_mcu_mailbox.rs`. The test boots the emulator
+with both SPDM and MCU Mbox active, then sends three sequential mbox commands
+(`FirmwareVersion`, `GetAuthCmdChallenge`, `FirmwareVersion`) — proving the
+cooperative loop successfully re-arms and processes requests while SPDM is
+concurrently polling.
+
+```bash
+cargo test -p caliptra-mcu-tests-integration test_cooperative_poll_loop_mbox -- --nocapture
+```
+
+UART output confirms both services initialize and run:
+
+```
+MCU_MBOX: polling initialized
+SPDM_TASK: Running SPDM-TASK (cooperative)...
+```
+
+---
+
+## Guidelines: Structuring Async Code to Minimize Overhead
+
+The experiments reveal three primary factors that drive async state machine bloat.
+These guidelines apply to any `async fn` targeting constrained flash budgets.
+
+### Factor 1: Number of await points per function
+
+Each `.await` in an `async fn` creates a new enum variant in the compiler-generated
+state machine. Every variant must save/restore all live locals across the suspend
+point. More awaits = more variants = more code.
+
+**Rule: Keep await counts low in any single `async fn`.**
+
+```rust
+// BAD — 15 await points in one function → 15 enum variants
+async fn handle_challenge(ctx: &mut Ctx) {
+    let hash = ctx.hash_init().await;
+    ctx.hash_update(&header).await;
+    ctx.hash_update(&ct_exponent).await;
+    ctx.hash_update(&salt).await;
+    // ... 11 more awaits
+    ctx.sign_hash(&digest).await;
+}
+
+// GOOD — 0 await points (sync handler, blocking calls)
+fn handle_challenge(ctx: &mut Ctx) {
+    let hash = ctx.hash_init();       // blocks via yield_wait
+    ctx.hash_update(&header);
+    ctx.hash_update(&ct_exponent);
+    ctx.hash_update(&salt);
+    // ... same operations, zero state machine overhead
+    ctx.sign_hash(&digest);
+}
+```
+
+### Factor 2: Grouping — dispatching through a single async fn
+
+When a single `async fn` calls multiple other `async fn`s (e.g. via match), the
+compiler merges all sub-futures' states into one giant enum. This is the
+`dispatch_request` problem: 8 handlers × 12–21 awaits each = 108+ variants in one
+poll function.
+
+**Rule: Never fan-out to multiple async handlers from a single async dispatch fn.**
+
+```rust
+// BAD — one poll fn contains states for ALL 8 handlers = 49KB
+async fn dispatch_request(code: u8, ctx: &mut Ctx) {
+    match code {
+        0x01 => get_digests(ctx).await,     // 12 awaits
+        0x02 => challenge(ctx).await,       // 16 awaits
+        0x03 => measurements(ctx).await,    // 20 awaits
+        0x04 => key_exchange(ctx).await,    // 21 awaits
+        // ... 4 more
+    }
+}
+
+// GOOD — dispatch is sync, no state machine at all
+fn dispatch_request(code: u8, ctx: &mut Ctx) {
+    match code {
+        0x01 => get_digests(ctx),           // sync fn
+        0x02 => challenge(ctx),             // sync fn
+        0x03 => measurements(ctx),          // sync fn
+        0x04 => key_exchange(ctx),          // sync fn
+        // each handler's stack frame is independent
+    }
+}
+```
+
+### Factor 3: Await chain depth
+
+Deeply nested async call chains compound the problem. An `async fn` that awaits
+another `async fn` that awaits another creates nested state machines that the
+compiler must compose. Each level adds its own enum variants and save/restore code.
+
+**Rule: Keep async at the task boundary (outermost level). Push sync down.**
+
+```rust
+// BAD — 3 levels deep, each level adds state machine overhead
+async fn task() {
+    handle_request().await;   // level 1
+}
+async fn handle_request() {
+    do_crypto().await;        // level 2
+}
+async fn do_crypto() {
+    mailbox.execute().await;  // level 3
+}
+
+// GOOD — async only at top, sync everywhere else
+async fn task() {
+    let msg = transport.receive().await;  // async: yields to other tasks
+    handle_request(&msg);                 // sync: no state machine
+    transport.send(&resp).await;          // async: yields to other tasks
+}
+fn handle_request(msg: &[u8]) {
+    do_crypto();                          // sync
+}
+fn do_crypto() {
+    mailbox.execute_blocking();           // sync: yield_wait loop
+}
+```
+
+### Decision framework
+
+```
+Is this an I/O operation where other tasks should run while we wait?
+├── YES (transport receive/send, long external waits) → async fn + .await
+└── NO  (mailbox round-trip, crypto, internal operations)
+    ├── Single-threaded executor? → sync fn + blocking
+    └── Multi-threaded runtime?   → async may be justified
+```
+
+### Summary of cost model
+
+| Pattern | State machine cost | Recommendation |
+|---|---|---|
+| `async fn` with 1–2 awaits (task boundary) | ~0 measurable | Use freely |
+| `async fn` with 10+ awaits (handler) | ~3–5KB per handler | Convert to sync |
+| Async dispatch to N async handlers | N × per-handler cost (compounds) | Dispatch must be sync |
+| Deep async call chain (3+ levels) | Multiplicative nesting | Flatten to sync |
 
 ---
 

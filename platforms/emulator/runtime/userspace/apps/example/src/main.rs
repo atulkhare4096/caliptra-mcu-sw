@@ -70,17 +70,19 @@ fn main() {
 }
 
 #[cfg(target_arch = "riscv32")]
-fn start() {
-    async_main::<caliptra_mcu_libtock_runtime::TockSyscalls>();
+#[embassy_executor::task]
+async fn start() {
+    async_main::<caliptra_mcu_libtock_runtime::TockSyscalls>().await;
 }
 
 #[cfg(not(target_arch = "riscv32"))]
-fn start() {
-    async_main::<caliptra_mcu_libtock_unittest::fake::Syscalls>();
+#[embassy_executor::task]
+async fn start() {
+    async_main::<caliptra_mcu_libtock_unittest::fake::Syscalls>().await;
 }
 
 #[allow(unreachable_code)]
-pub(crate) fn async_main<S: Syscalls>() {
+pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(
         console_writer,
@@ -102,7 +104,7 @@ pub(crate) fn async_main<S: Syscalls>() {
 
     for _ in 0..5 {
         writeln!(console_writer, "Sleeping for 1 millisecond").unwrap();
-        sleep::<S>(Milliseconds(1));
+        sleep::<S>(Milliseconds(1)).await;
         writeln!(console_writer, "async sleeper woke").unwrap();
     }
 
@@ -292,8 +294,8 @@ mod subscribe {
     pub const CALLBACK: u32 = 0;
 }
 
-pub(crate) fn sleep<S: Syscalls>(time: Milliseconds) {
-    let x = AsyncAlarm::<S>::sleep_for(time);
+pub(crate) async fn sleep<S: Syscalls>(time: Milliseconds) {
+    let x = AsyncAlarm::<S>::sleep_for(time).await;
     writeln!(Console::<S>::writer(), "Async sleep done {:?}", x).unwrap();
 }
 
@@ -326,7 +328,7 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
         Ok(ticks.saturating_div(freq / 1000))
     }
 
-    pub fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
+    pub async fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
         let freq = Self::get_frequency()?;
         let ticks = time.to_ticks(freq).0;
         writeln!(Console::<S>::writer(), "Sleeping for {} ticks", ticks).unwrap();
@@ -334,7 +336,7 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
         S::command(DRIVER_NUM, command::SET_RELATIVE, ticks, 0)
             .to_result()
             .map(|_when: u32| ())?;
-        sub.map(|_| ())
+        sub.await.map(|_| ())
     }
 }
 
@@ -362,15 +364,16 @@ mod test {
     static SLEEP_COUNTER: LazyLock<Mutex<AtomicU32>> =
         LazyLock::new(|| Mutex::new(AtomicU32::new(0)));
 
-    fn run_sleep() {
-        sleep::<fake::Syscalls>(Milliseconds(1));
+    #[embassy_executor::task]
+    async fn run_sleep() {
+        sleep::<fake::Syscalls>(Milliseconds(1)).await;
         SLEEP_COUNTER
             .lock()
             .unwrap()
             .fetch_add(1, Ordering::Relaxed);
         // ensure there is always an upcall scheduled
         loop {
-            sleep::<fake::Syscalls>(Milliseconds(1));
+            sleep::<fake::Syscalls>(Milliseconds(1)).await;
         }
     }
 
