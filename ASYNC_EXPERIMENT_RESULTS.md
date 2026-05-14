@@ -53,10 +53,21 @@ inlined by LTO.
 
 ## Analysis
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '14px'}}}%%
+pie title .text Breakdown — Async Architecture (132,858 bytes)
+    "dispatch_request poll fn" : 49144
+    "Other handler code" : 39072
+    "Non-handler code (transport, runtime, etc.)" : 44642
 ```
-Async handlers total .text contribution: 88,216 bytes
-Estimated sync handler code (from sync branch): ~39,000 bytes
-Pure async state machine overhead: ~49,000 bytes
+
+```mermaid
+%%{init: {'theme': 'base'}}%%
+xychart-beta
+    title ".text Size Comparison"
+    x-axis ["Sync handlers\n(actual code)", "Async state machine\noverhead", "Base (transport,\nruntime, etc.)"]
+    y-axis "Bytes" 0 --> 50000
+    bar [39000, 49000, 44642]
 ```
 
 The async state machine overhead is:
@@ -100,36 +111,94 @@ in microseconds, there's no useful work to interleave, and the handler cannot ma
 progress until the result returns. These are **blocking operations dressed up as async**.
 The `async` keyword buys nothing except 49KB of state machine overhead.
 
-### The hybrid architecture
+### Before: Fully Async Architecture
 
+```mermaid
+graph TD
+    subgraph executor["Embassy Executor"]
+        subgraph spdm_task["spdm_task (async fn)"]
+            recv["transport.receive().await"] --> dispatch
+            dispatch["dispatch_request().await"] --> send
+            send["transport.send().await"] --> recv
+
+            subgraph dispatch_sm["dispatch_request poll fn — 49KB state machine"]
+                d1["Box::pin digests_rsp.await
+12 await points"]
+                d2["Box::pin challenge_rsp.await
+16 await points"]
+                d3["Box::pin measurements_rsp.await
+20 await points"]
+                d4["Box::pin key_exchange_rsp.await
+21 await points"]
+                d5["... 4 more async handlers"]
+            end
+
+            subgraph handler_internals["Each handler awaits mailbox"]
+                h1["hash.init().await"] --> mb1["mailbox.execute().await"]
+                h2["hash.update().await"] --> mb2["mailbox.execute().await"]
+                h3["sign_hash().await"] --> mb3["mailbox.execute().await"]
+            end
+
+            subgraph tock_sub["TockSubscribe (heap-allocated)"]
+                box_alloc["Box::new + Pin"] --> waker["Waker"] --> future_poll["Future::poll"]
+            end
+        end
+
+        pldm["pldm_task (async)"]
+        vdm["mctp_vdm_task (async)"]
+    end
+
+    style dispatch_sm fill:#ff6b6b,color:#fff
+    style handler_internals fill:#ffa07a
+    style tock_sub fill:#ffa07a
+    style recv fill:#4ecdc4
+    style send fill:#4ecdc4
+    style dispatch fill:#ff6b6b,color:#fff
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Embassy Executor (async runtime)                        │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ spdm_task (async fn)                               │  │
-│  │                                                    │  │
-│  │  loop {                                            │  │
-│  │    msg = transport.receive().await  ← ASYNC        │  │
-│  │                                                    │  │
-│  │    dispatch_request(&msg)  ← SYNC (no state machine) │
-│  │      ├─ handle_get_digests()     (plain fn)        │  │
-│  │      │   └─ hash.init()                            │  │
-│  │      │       └─ mailbox.execute_blocking()         │  │
-│  │      │           └─ yield_wait loop (stack Cell)   │  │
-│  │      ├─ handle_challenge()       (plain fn)        │  │
-│  │      │   └─ sign_hash()                            │  │
-│  │      │       └─ mailbox.execute_blocking()         │  │
-│  │      └─ ... all 8 handlers are plain fns           │  │
-│  │                                                    │  │
-│  │    transport.send(&resp).await  ← ASYNC            │  │
-│  │  }                                                 │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌──────────────────┐  ┌──────────────────────────────┐  │
-│  │ pldm_task (async) │  │ mctp_vdm_task (async)       │  │
-│  └──────────────────┘  └──────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
+
+### After: Hybrid Architecture (async transport + sync handlers)
+
+```mermaid
+graph TD
+    subgraph executor["Embassy Executor"]
+        subgraph spdm_task["spdm_task (async fn — 2 await points only)"]
+            recv["transport.receive().await"] --> dispatch
+            dispatch["dispatch_request(&msg)"] --> send
+            send["transport.send().await"] --> recv
+
+            subgraph dispatch_sync["dispatch_request — plain match (no state machine)"]
+                d1["handle_get_digests()
+plain fn"]
+                d2["handle_challenge()
+plain fn"]
+                d3["handle_measurements()
+plain fn"]
+                d4["handle_key_exchange()
+plain fn"]
+                d5["... 4 more sync handlers"]
+            end
+
+            subgraph handler_internals["Each handler calls blocking mailbox"]
+                h1["hash.init()"] --> mb1["mailbox.execute_blocking()"]
+                h2["hash.update()"] --> mb2["mailbox.execute_blocking()"]
+                h3["sign_hash()"] --> mb3["mailbox.execute_blocking()"]
+            end
+
+            subgraph blocking["BlockingResult (stack-allocated)"]
+                cell["Cell on stack"] --> yield_w["yield_wait loop"] --> upcall["kernel upcall sets Cell"]
+            end
+        end
+
+        pldm["pldm_task (async)"]
+        vdm["mctp_vdm_task (async)"]
+    end
+
+    style dispatch_sync fill:#4ecdc4
+    style handler_internals fill:#b8e6b8
+    style blocking fill:#b8e6b8
+    style recv fill:#4ecdc4
+    style send fill:#4ecdc4
+    style dispatch fill:#4ecdc4
 ```
 
 The blocking mailbox uses a stack-allocated `Cell` + `yield_wait` loop instead of
@@ -138,6 +207,26 @@ This is safe because Tock userspace is single-threaded and cooperative — `yiel
 returns to the kernel, which fires the upcall setting the Cell, and the loop reads it.
 
 ### Why this eliminates 49KB
+
+```mermaid
+graph LR
+    subgraph before["BEFORE: async handler compile output"]
+        direction TB
+        enum["enum DispatchState\n  Variant0_PreDigests\n  Variant1_AwaitHash1\n  Variant2_AwaitHash2\n  ...\n  Variant108_Final"] --> poll_fn["fn poll()\n  match state {\n    save/restore locals\n    for every await point\n  }"]
+        poll_fn --> size1["49,144 bytes"]
+    end
+
+    subgraph after["AFTER: sync handler compile output"]
+        direction TB
+        match_stmt["match req_code {\n  GetDigests => fn()\n  Challenge => fn()\n  ...\n}"] --> stack["Normal stack frames\nNo save/restore\nNo enum variants"]
+        stack --> size2["~0 bytes overhead"]
+    end
+
+    style before fill:#ff6b6b,color:#fff
+    style after fill:#4ecdc4
+    style size1 fill:#ff6b6b,color:#fff
+    style size2 fill:#4ecdc4
+```
 
 The 49KB `dispatch_request` poll function exists because each of the 8 handlers is an
 `async fn` with 12–21 await points. The compiler generates an enum variant for every
@@ -166,6 +255,59 @@ regular `fn` while keeping transport async — the hybrid architecture.
 ---
 
 ## Implementation Plan
+
+```mermaid
+graph BT
+    subgraph L0["Phase 1 — Blocking Infrastructure"]
+        blocking["blocking.rs\nBlockingResult + yield_wait"]
+    end
+
+    subgraph L1["Phase 2 — Syscall Drivers"]
+        mailbox["mailbox.rs\nexecute_blocking()"]
+        flash["flash.rs"]
+        dma["dma.rs"]
+        doe["doe.rs"]
+        mctp_sys["mctp.rs\n⚡ KEEP ASYNC"]
+    end
+
+    subgraph L2["Phase 3 — Caliptra API"]
+        mbox_api["mailbox_api.rs"]
+        crypto["crypto/\nhash, asym, aes_gcm"]
+        cert["certificate.rs"]
+        fw_update["firmware_update/"]
+        img_load["image_loading/"]
+    end
+
+    subgraph L3["Phase 4 — SPDM Handlers ⭐ 49KB savings"]
+        handlers["digests, certificate,\nchallenge, measurements,\nkey_exchange, finish,\nchunk_get, vendor_defined"]
+        ctx["context.rs\ndispatch_request"]
+        spdm_support["cert_store, transcript,\nsignature, session"]
+    end
+
+    subgraph L4["Phase 5 — Library Daemons"]
+        pldm["pldm-lib"]
+        vdm_lib["mctp-vdm-lib"]
+        mbox_lib["mcu-mbox-lib"]
+    end
+
+    subgraph L5["Phase 6 — Platform App"]
+        app["user app\nspdm/mod.rs, riscv.rs"]
+    end
+
+    L1 --> L0
+    L2 --> L1
+    L3 --> L2
+    L4 --> L3
+    L5 --> L4
+
+    style L0 fill:#e8e8e8
+    style L1 fill:#d4e6f1
+    style L2 fill:#d5f5e3
+    style L3 fill:#fcf3cf
+    style L4 fill:#fadbd8
+    style L5 fill:#e8daef
+    style mctp_sys fill:#4ecdc4,color:#fff
+```
 
 ### Phase 1: Blocking Infrastructure (Layer 0)
 
@@ -278,6 +420,33 @@ Wire up the emulator app to use sync handlers with async task shell.
 4. Compare section sizes against sync branch expectations
 
 ### Conversion Pattern (mechanical per-function)
+
+```mermaid
+graph LR
+    subgraph before["BEFORE"]
+        direction TB
+        sig_b["pub async fn execute_mailbox_cmd(...)"]
+        body_b[".await on every call"]
+        trait_b["#[async_trait(?Send)]"]
+        dep_b["extern crate alloc\nuse Box"]
+    end
+
+    subgraph after["AFTER"]
+        direction TB
+        sig_a["pub fn execute_mailbox_cmd(...)"]
+        body_a["direct synchronous calls"]
+        trait_a["plain trait (no macro)"]
+        dep_a["no alloc needed"]
+    end
+
+    sig_b -- "remove async" --> sig_a
+    body_b -- "remove .await" --> body_a
+    trait_b -- "remove attribute" --> trait_a
+    dep_b -- "remove imports" --> dep_a
+
+    style before fill:#ff6b6b,color:#fff
+    style after fill:#4ecdc4
+```
 
 ```rust
 // BEFORE (async)
