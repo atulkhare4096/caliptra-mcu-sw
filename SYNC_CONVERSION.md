@@ -691,6 +691,46 @@ on a single-threaded MCU:
 
 ---
 
+## Testing
+
+### How the Cooperative Loop Is Tested
+
+The `test-mcu-mbox-cmds` feature exercises the full cooperative poll loop without
+requiring a dedicated feature flag. When this feature is active, `async_main()` calls
+`mcu_mbox::init_polling()` then `spdm::spdm_cooperative_main()`, which invokes
+`mcu_mbox::poll_one()` on every iteration. SPDM runs by default (no feature gate),
+so any MCU Mbox test feature automatically exercises cooperative interleaving.
+
+### `test_cooperative_poll_loop_mbox`
+
+Located in `tests/integration/src/runtime/test_mcu_mailbox.rs`, this test validates
+that the cooperative loop correctly re-arms after each command:
+
+1. Boots the emulator with feature `test-mcu-mbox-cmds`.
+2. Waits for `FIRMWARE_MAILBOX_READY`.
+3. Sends three sequential mailbox commands (`FirmwareVersion`, `GetAuthCmdChallenge`,
+   `FirmwareVersion` again) through `hw.mailbox_execute_req()`.
+4. Asserts each response returns `MboxStatusE::CMD_COMPLETE`.
+
+This proves that `poll_one()` successfully receives a command, dispatches it, sends the
+response, and re-arms the non-blocking receive — all while SPDM's cooperative main loop
+drives the polling.
+
+### Running the Test
+
+```bash
+cargo test -p caliptra-mcu-tests-integration test_cooperative_poll_loop_mbox -- --nocapture
+```
+
+UART output confirms both services initialize:
+
+```
+MCU_MBOX: polling initialized
+SPDM_TASK: Running SPDM-TASK (cooperative)...
+```
+
+---
+
 ## File Reference
 
 | File | Purpose |
