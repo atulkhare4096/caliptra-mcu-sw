@@ -17,16 +17,19 @@ heap-allocated futures.
 
 ## Results
 
-| Section | Before | After | Δ Bytes | Δ % |
-|---------|-------:|------:|--------:|----:|
-| `.text` | 144,346 | 90,576 | −53,770 | −37.3% |
-| `.rodata` | 26,876 | 17,404 | −9,472 | −35.2% |
+| Section | Before (async) | After (sync) | Δ Bytes | Δ % |
+|---------|---------------:|-------------:|--------:|----:|
+| `.text` | 144,346 | 90,594 | −53,752 | −37.2% |
+| `.rodata` | 26,876 | 17,400 | −9,476 | −35.3% |
 | `.data` | 60 | 32 | −28 | −46.7% |
 | `.bss` | 60,056 | 30,920 | −29,136 | −48.5% |
 | `.stack` | 44,544 | 44,544 | 0 | 0% |
-| **Flash total** | **171,282** | **108,012** | **−63,270** | **−36.9%** |
+| **Flash total** | **171,282** | **107,994** | **−63,288** | **−36.9%** |
 
-129 files changed, 2,174 insertions, 2,427 deletions (net −253 lines).
+All Embassy runtime dependencies (`embassy-executor`, `embassy-sync`,
+`async-trait`) have been completely eliminated from the production binary.
+The executor code is gated behind an optional `"executor"` feature used only
+by the standalone `example-app`.
 
 ---
 
@@ -85,8 +88,15 @@ Key design decisions:
   syscalls directly via `S::syscall4`, bypassing the `share::scope` / `Subscribe`
   builder pattern that existed to support async lifetimes.
 
-Also added `SyncMutex<T>` — an `UnsafeCell`-based mutex safe for
-single-threaded Tock userspace, providing `.lock() -> &mut T` without futures.
+Also added:
+- `SyncMutex<T>` — an `UnsafeCell`-based mutex for single-threaded Tock
+  userspace, providing `.lock() -> &mut T` without futures.
+- `CsMutex<T>` — drop-in replacement for `embassy_sync::blocking_mutex::Mutex`
+  with the same `.lock(|&T| ...)` closure API.
+- `SyncLazy<T, F>` — replacement for `embassy_sync::lazy_lock::LazyLock`.
+- `UpcallNotification` — atomic ready flag set by kernel upcalls, enabling
+  non-blocking cooperative polling across multiple drivers.
+- `subscribe_notify()` — registers a SUBSCRIBE targeting an `UpcallNotification`.
 
 ### Phase 2: Syscall Driver Conversion
 
@@ -274,42 +284,76 @@ image_loader::image_loading_task();
 mcu_mbox::mcu_mbox_task();
 ```
 
+### Phase 6: Embassy Dependency Elimination
+
+Replaced all remaining Embassy type usage:
+
+| Embassy Type | Replacement | Files |
+|-------------|-------------|-------|
+| `blocking_mutex::Mutex<CriticalSectionRawMutex, RefCell<T>>` | `CsMutex<RefCell<T>>` | 3 (pldm_context.rs ×2, shared_large_msg_buf.rs) |
+| `lazy_lock::LazyLock` | `SyncLazy<T, F>` | 5 (config.rs ×3, pldm_fdops_mock.rs, firmware_update/mod.rs) |
+| `embassy-executor` | Gated behind `features = ["executor"]` | libtockasync only |
+
+Removed `embassy-executor`, `embassy-sync`, and `async-trait` from all
+production Cargo.toml files (12 files total). The workspace root retains
+`embassy-executor` only for the optional `example-app`.
+
+### Phase 7: Non-Blocking Upcall API
+
+Added upcall-driven non-blocking primitives to enable cooperative polling
+across multiple drivers without `yield_wait()` blocking:
+
+```rust
+// One-time setup (in init):
+static NOTIFY: UpcallNotification = UpcallNotification::new();
+mctp.setup_receive_request(&mut BUF, &NOTIFY)?;
+
+// Cooperative poll loop:
+loop {
+    if NOTIFY.is_ready() {
+        let (len, _, info) = NOTIFY.args();
+        // process BUF[..len]...
+        NOTIFY.clear();
+        mctp.arm_receive_request()?;
+    }
+    // ... poll other drivers ...
+    S::yield_no_wait();  // or yield_wait() if all idle
+}
+```
+
+New driver methods:
+- **MCTP:** `setup_receive_request()`, `arm_receive_request()`,
+  `setup_receive_response()`, `arm_receive_response()`
+- **MCU Mbox:** `setup_receive_command()`, `arm_receive_command()`
+
 ---
 
-## What Remains
+## Dependency Status
 
-The following Embassy dependencies are still referenced but no longer on the
-runtime hot path:
+All Embassy runtime dependencies have been **fully eliminated** from the
+production `user-app` binary:
 
-- **`embassy_sync::blocking_mutex`** — Used by `caliptra-api` for
-  `pldm_context.rs` (`Mutex<CriticalSectionRawMutex, RefCell<T>>` in
-  `PLDM_STATE` / `DOWNLOAD_CTX`). These are the *blocking* (non-async) mutex
-  from Embassy, not the async one. They could be replaced with bare
-  `critical_section` crate usage.
+| Crate | Status |
+|-------|--------|
+| `embassy-executor` | Removed from all production crates. Retained behind optional `"executor"` feature in `libtockasync` for `example-app` only. |
+| `embassy-sync` | Completely removed from workspace. |
+| `async-trait` | Completely removed from workspace. |
 
-- **`embassy_sync::lazy_lock::LazyLock`** — Used for `DESCRIPTOR`,
-  `FIRMWARE_PARAMS`, `PLDM_PROTOCOL_CAPABILITIES` config statics. Could be
-  replaced with `core::cell::OnceCell` or a `static mut` + init guard.
-
-- **`embassy-executor`** — Still in workspace `Cargo.toml`, referenced by
-  `libtockasync/src/tock_executor.rs` and `lib.rs`. The `TockExecutor` and
-  `Spawner` types still exist in the library but are never instantiated by
-  the user-app after the EXECUTOR static was removed.
-
-All `embassy_sync::signal::Signal` usage has been removed. The PLDM
-handshake was replaced with `PldmService::run_until()` (see above).
-
-Removing the remaining dependencies could yield additional size savings but
-is low priority — they are compile-time-only overhead at this point.
+Replacement types (in `libtockasync/src/blocking.rs`):
+- `CsMutex<T>` — replaces `blocking_mutex::Mutex<CriticalSectionRawMutex, T>`
+- `SyncLazy<T, F>` — replaces `lazy_lock::LazyLock<T>`
+- `SyncMutex<T>` — replaces async `Mutex<T>` (returns `&mut T` directly)
+- `UpcallNotification` — replaces `Signal<..., ()>` for non-blocking event notification
 
 ---
 
 ## Lessons Learned
 
 1. **Async is expensive on embedded** — On a single-threaded MCU with no
-   preemption, async/await adds ~63 KB of flash overhead (37%) with zero
+   preemption, async/await added ~63 KB of flash overhead (37%) with zero
    benefit. The cooperative scheduling that Embassy provides is unnecessary
-   when there's only one thread.
+   when there's only one thread and cooperative polling can be achieved
+   with simple non-blocking primitives.
 
 2. **Stack-based blocking is simpler and smaller** — The `BlockingResult` +
    `yield_wait` loop pattern is trivially correct, needs no heap, and compiles
@@ -357,10 +401,9 @@ inside a deeply-nested `.await` chain produced a trace through
 numbers. Now traces show the actual call chain. GDB breakpoints work on the
 real function bodies instead of compiler-generated `poll()` methods.
 
-**Dependency surface.** The runtime no longer depends on Embassy's executor or
-its async mutex/signal types at the hot path. Fewer upstream crate updates to
-track, fewer potential breaking changes, and fewer features to audit for a
-security-sensitive firmware target.
+**Dependency surface.** The runtime has zero dependency on Embassy. Fewer
+upstream crate updates to track, fewer potential breaking changes, and fewer
+features to audit for a security-sensitive firmware target.
 
 **Onboarding.** A new contributor no longer needs to understand Rust's async
 model, Embassy's executor architecture, or the `#[embassy_executor::task]`
@@ -369,27 +412,20 @@ embedded C ported to Rust.
 
 ### What got worse
 
-**Concurrency model is now sequential.** The async version could interleave
-multiple tasks (SPDM responder, MCU mailbox, PLDM, VDM) within a single
-thread via cooperative scheduling. The sync version calls them sequentially in
-`async_main()`:
+**Concurrency model is now sequential (but fixable).** The async version could
+interleave multiple tasks (SPDM responder, MCU mailbox, PLDM, VDM) within a
+single thread via cooperative scheduling. The sync version currently calls
+them sequentially. However, the non-blocking `UpcallNotification` API
+(Phase 7) provides all the building blocks needed for a cooperative poll
+loop without an executor:
 ```rust
-spdm::spdm_task();       // blocks forever handling SPDM messages
-image_loader::...();      // never reached unless spdm_task returns
-mcu_mbox::...();          // never reached
+loop {
+    if mctp_notify.is_ready() { handle_mctp(); mctp.arm_receive_request()?; }
+    if mbox_notify.is_ready() { handle_mbox(); mbox.arm_receive_command()?; }
+    S::yield_wait();
+}
 ```
-Only the first task actually runs. This works for testing (where each test
-binary exercises one protocol) but is a regression for a production scenario
-that needs multiple services running concurrently. Restoring concurrency
-would require either:
-- A simple round-robin loop that calls non-blocking "poll one message"
-  functions from each service, or
-- Re-introducing a lightweight task scheduler (much simpler than Embassy).
-
-**Remaining Embassy dependencies.** The `embassy_sync::blocking_mutex` and
-`embassy_sync::lazy_lock::LazyLock` types are still used for PLDM context
-statics and configuration. These are functional (non-async) and work
-correctly, but represent an avoidable dependency.
+Converting each service to use this pattern is the next step.
 
 **`SyncMutex` is unsound in general.** The `SyncMutex<T>` added in
 `blocking.rs` uses `UnsafeCell` and returns `&mut T` from `.lock()` without
@@ -419,17 +455,19 @@ build, easier to debug. The 37% flash reduction alone justifies it for
 resource-constrained targets.
 
 For a **production multi-service firmware** that needs SPDM + PLDM + MCU
-mailbox + VDM running concurrently, the sync conversion is incomplete. The
-sequential call model needs to be replaced with a cooperative poll loop.
-This is a smaller and simpler piece of infrastructure than Embassy's full
-executor, but it does need to be built.
+mailbox + VDM running concurrently, the infrastructure is now in place
+(Phase 7's `UpcallNotification` + `setup_*` / `arm_*` API) but the services
+have not yet been converted to use it. The remaining work is purely
+application-level: replace each service's blocking `receive_*()` call with
+the non-blocking `setup_*()` / poll / `arm_*()` pattern inside a shared
+cooperative loop.
 
 The recommended path forward is:
 1. ~~Fix the remaining broken call sites~~ ✅ Done.
-2. Convert each service's main loop from "block forever" to "poll one
-   message and return," with a `PollResult` enum (`Handled`, `WouldBlock`).
-3. Add a top-level round-robin loop in `async_main()` that calls each
-   service's poll function and `yield_wait()` when all return `WouldBlock`.
-4. Remove the remaining Embassy dependencies entirely (`embassy_sync::blocking_mutex`,
-   `embassy_sync::lazy_lock`, `embassy-executor` crate).
+2. ~~Remove all Embassy dependencies~~ ✅ Done.
+3. ~~Add non-blocking upcall primitives (UpcallNotification)~~ ✅ Done.
+4. Convert each service's main loop to use `setup_*` / `is_ready()` /
+   `arm_*` instead of blocking `receive_*` calls.
+5. Wire up a top-level cooperative poll loop that checks all
+   `UpcallNotification` flags and `yield_wait()`s when idle.
 
