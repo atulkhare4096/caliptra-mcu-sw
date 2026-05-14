@@ -4,7 +4,6 @@ extern crate alloc;
 
 use crate::vdm_handler::pci_sig::tdisp::protocol::*;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 /// Error codes returned by TDISP driver
 #[derive(Debug, PartialEq)]
@@ -36,7 +35,6 @@ pub type TdispDriverResult<T> = Result<T, TdispDriverError>;
 /// TDISP Driver trait that defines the interface for TDISP operations.
 /// This trait is intended to be implemented by a TDISP driver
 /// that interacts with the TDISP device.
-#[async_trait]
 pub trait TdispDriver: Send + Sync {
     /// Gets the TDISP device capabilities.
     ///
@@ -46,7 +44,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn get_capabilities(
+    fn get_capabilities(
         &self,
         req_caps: TdispReqCapabilities,
         resp_caps: &mut TdispRespCapabilities,
@@ -60,7 +58,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn lock_interface(
+    fn lock_interface(
         &mut self,
         function_id: FunctionId,
         param: TdispLockInterfaceParam,
@@ -74,7 +72,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// Length of the device interface report on success or an error response code.
-    async fn get_device_interface_report_len(
+    fn get_device_interface_report_len(
         &self,
         function_id: FunctionId,
         intf_report_len: &mut u16,
@@ -91,7 +89,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn get_device_interface_report(
+    fn get_device_interface_report(
         &self,
         function_id: FunctionId,
         offset: u16,
@@ -107,7 +105,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn get_device_interface_state(
+    fn get_device_interface_state(
         &self,
         function_id: FunctionId,
         tdi_state: &mut TdiStatus,
@@ -120,7 +118,7 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn start_interface(&mut self, function_id: FunctionId) -> TdispDriverResult<u32>;
+    fn start_interface(&mut self, function_id: FunctionId) -> TdispDriverResult<u32>;
 
     /// Stop the device interface.
     ///
@@ -129,5 +127,5 @@ pub trait TdispDriver: Send + Sync {
     ///
     /// # Returns
     /// 0 on success or an error response code as per the TDISP specification on failure.
-    async fn stop_interface(&mut self, function_id: FunctionId) -> TdispDriverResult<u32>;
+    fn stop_interface(&mut self, function_id: FunctionId) -> TdispDriverResult<u32>;
 }

@@ -11,7 +11,7 @@ use caliptra_ocp_eat::CborEncoder;
 /// This should be sized based on the expected number of target environments added to the evidence.
 const EVIDENCE_SCRATCH_BUFFER_SIZE: usize = 1024;
 
-pub async fn generate_eat_claims(
+pub fn generate_eat_claims(
     issuer: &str,
     eat_nonce: &[u8],
     concise_evidence: ConciseEvidence<'_>,
@@ -23,7 +23,7 @@ pub async fn generate_eat_claims(
     // cti - unique identifier for the token
     let mut cti = [0u8; 64];
     let cti_len = eat_nonce.len().min(64);
-    Rng::generate_random_number(&mut cti[..cti_len]).await?;
+    Rng::generate_random_number(&mut cti[..cti_len])?;
 
     // Debug status - TODO: replace with actual status
     let debug_status = DebugStatus::Disabled;

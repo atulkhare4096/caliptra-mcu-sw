@@ -7,7 +7,6 @@ use crate::codec::{CodecError, MessageBuf};
 use crate::protocol::*;
 use crate::vdm_handler::pci_sig::ide_km::driver::IdeDriverError;
 use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriverError;
-use async_trait::async_trait;
 
 pub mod iana;
 pub mod pci_sig;
@@ -32,7 +31,6 @@ pub enum VdmError {
 
 pub type VdmResult<T> = Result<T, VdmError>;
 
-#[async_trait]
 pub trait VdmResponder {
     /// Handle a VDM request and produce a response.
     ///
@@ -45,7 +43,7 @@ pub trait VdmResponder {
     ///
     /// # Returns
     /// `Ok(len)` for inline responses, or `Err(VdmError::LargeResp(n))` for large responses.
-    async fn handle_request(
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,

@@ -7,7 +7,7 @@ use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 use constant_time_eq::constant_time_eq;
 
-pub(crate) async fn handle_start_interface_request(
+pub(crate) fn handle_start_interface_request(
     tdisp_responder: &mut TdispResponder<'_>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
@@ -34,7 +34,7 @@ pub(crate) async fn handle_start_interface_request(
     match tdisp_responder
         .driver
         .start_interface(interface_id.function_id)
-        .await
+        
     {
         Ok(0) => {
             intf_state.set_start_interface_nonce(None);

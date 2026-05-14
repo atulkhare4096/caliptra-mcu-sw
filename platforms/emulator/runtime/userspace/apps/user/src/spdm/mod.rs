@@ -26,7 +26,6 @@ use caliptra_mcu_spdm_lib::transport::doe::DoeTransport;
 use caliptra_mcu_spdm_lib::transport::mctp::MctpTransport;
 use core::fmt::Write;
 use device_cert_store::{initialize_cert_store, SharedCertStore};
-use embassy_executor::Spawner;
 
 // Caliptra supported SPDM and Secure SPDM versions
 const SPDM_VERSIONS: &[SpdmVersion] = &[SpdmVersion::V12, SpdmVersion::V13];
@@ -35,8 +34,7 @@ const SECURE_SPDM_VERSIONS: &[SpdmVersion] = &[SpdmVersion::V12];
 // Caliptra Crypto timeout exponent (2^20 us)
 const CALIPTRA_SPDM_CT_EXPONENT: u8 = 20;
 
-#[embassy_executor::task]
-pub(crate) async fn spdm_task(spawner: Spawner) {
+pub(crate) fn spdm_task() {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     writeln!(console_writer, "SPDM_TASK: Running SPDM-TASK...").unwrap();
 
@@ -44,7 +42,7 @@ pub(crate) async fn spdm_task(spawner: Spawner) {
     shared_large_msg_buf::init();
 
     // Initialize the shared certificate store
-    if let Err(e) = initialize_cert_store().await {
+    if let Err(e) = initialize_cert_store() {
         writeln!(
             console_writer,
             "SPDM_TASK: Failed to initialize certificate store: {:?}",
@@ -58,28 +56,11 @@ pub(crate) async fn spdm_task(spawner: Spawner) {
     #[cfg(not(feature = "pcr-quote-measurements"))]
     init_target_env_claims();
 
-    if let Err(e) = spawner.spawn(spdm_mctp_responder()) {
-        writeln!(
-            console_writer,
-            "SPDM_TASK: Failed to spawn spdm_mctp_responder: {:?}",
-            e
-        )
-        .unwrap();
-    }
-
-    #[cfg(feature = "doe")]
-    if let Err(e) = spawner.spawn(spdm_doe_responder()) {
-        writeln!(
-            console_writer,
-            "SPDM_TASK: Failed to spawn spdm_doe_responder: {:?}",
-            e
-        )
-        .unwrap();
-    }
+    // Run MCTP responder directly (blocks)
+    spdm_mctp_responder();
 }
 
-#[embassy_executor::task]
-async fn spdm_mctp_responder() {
+fn spdm_mctp_responder() {
     let mut raw_buffer = [0; MAX_SPDM_RESPONDER_BUF_SIZE];
     let mut cw = Console::<DefaultSyscalls>::writer();
     let mut mctp_spdm_transport: MctpTransport = MctpTransport::new(mctp::driver_num::MCTP_SPDM);
@@ -149,7 +130,7 @@ async fn spdm_mctp_responder() {
 
     let mut msg_buffer = MessageBuf::new(&mut raw_buffer);
     loop {
-        let result = ctx.process_message(&mut msg_buffer).await;
+        let result = ctx.process_message(&mut msg_buffer);
         match result {
             Ok(_) => {
                 writeln!(cw, "SPDM_MCTP_RESPONDER: Process message successfully").unwrap();
@@ -161,8 +142,7 @@ async fn spdm_mctp_responder() {
     }
 }
 
-#[embassy_executor::task]
-async fn spdm_doe_responder() {
+fn spdm_doe_responder() {
     let mut raw_buffer = [0; MAX_SPDM_RESPONDER_BUF_SIZE];
     let mut cw = Console::<DefaultSyscalls>::writer();
     let mut doe_spdm_transport: DoeTransport = DoeTransport::new(doe::driver_num::DOE_SPDM);
@@ -280,7 +260,7 @@ async fn spdm_doe_responder() {
 
     let mut msg_buffer = MessageBuf::new(&mut raw_buffer);
     loop {
-        let result = ctx.process_message(&mut msg_buffer).await;
+        let result = ctx.process_message(&mut msg_buffer);
         match result {
             Ok(_) => {
                 writeln!(cw, "SPDM_DOE_RESPONDER: Process message successfully").unwrap();

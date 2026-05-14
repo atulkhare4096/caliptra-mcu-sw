@@ -15,7 +15,7 @@ pub use caliptra_api::mailbox::{CmKeyUsage, CMB_ECDH_EXCHANGE_DATA_MAX_SIZE};
 pub struct Ecdh;
 
 impl Ecdh {
-    pub async fn ecdh_generate() -> CaliptraApiResult<CmEcdhGenerateResp> {
+    pub fn ecdh_generate() -> CaliptraApiResult<CmEcdhGenerateResp> {
         let mailbox = Mailbox::new();
 
         let mut req = CmEcdhGenerateReq {
@@ -30,11 +30,11 @@ impl Ecdh {
             req.as_mut_bytes(),
             rsp_bytes,
         )
-        .await?;
+        ?;
         Ok(rsp)
     }
 
-    pub async fn ecdh_finish(
+    pub fn ecdh_finish(
         key_usage: CmKeyUsage,
         generate_resp: &CmEcdhGenerateResp,
         incoming_exchange_data: &[u8; CMB_ECDH_EXCHANGE_DATA_MAX_SIZE],
@@ -56,7 +56,7 @@ impl Ecdh {
             req.as_mut_bytes(),
             rsp_bytes,
         )
-        .await?;
+        ?;
         Ok(rsp.output)
     }
 }

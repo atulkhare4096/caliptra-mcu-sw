@@ -5,7 +5,6 @@ extern crate alloc;
 use crate::error::{SpdmError, SpdmResult};
 use crate::protocol::*;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext, SHA384_HASH_SIZE};
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
@@ -32,7 +31,6 @@ pub enum CertStoreError {
 }
 pub type CertStoreResult<T> = Result<T, CertStoreError>;
 
-#[async_trait]
 pub trait SpdmCertStore {
     /// Get supported certificate slot count
     /// The supported slots are consecutive from 0 to slot_count - 1.
@@ -48,7 +46,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `bool` - True if the slot is provisioned, false otherwise.
-    async fn is_provisioned(&self, slot_id: u8) -> bool;
+    fn is_provisioned(&self, slot_id: u8) -> bool;
 
     /// Get the length of the certificate chain in bytes.
     /// The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
@@ -60,7 +58,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `usize` - The length of the certificate chain in bytes or error.
-    async fn cert_chain_len(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<usize>;
+    fn cert_chain_len(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<usize>;
 
     /// Get the certificate chain in portion. The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
     /// The type of the certificate chain is indicated by the asym_algo parameter.
@@ -75,7 +73,7 @@ pub trait SpdmCertStore {
     /// * `usize` - The number of bytes read or error.
     /// If the cert portion size is smaller than the buffer size, the remaining bytes in the buffer will be filled with 0,
     /// indicating the end of the cert chain.
-    async fn get_cert_chain<'a>(
+    fn get_cert_chain<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
@@ -93,7 +91,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `()` - Ok if successful, error otherwise.
-    async fn root_cert_hash<'a>(
+    fn root_cert_hash<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
@@ -110,7 +108,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `()` - Ok if successful, error otherwise.
-    async fn sign_hash<'a>(
+    fn sign_hash<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
@@ -126,7 +124,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `u8` - The KeyPairID associated with the certificate chain or None if not supported or not found.
-    async fn key_pair_id(&self, slot_id: u8) -> Option<u8>;
+    fn key_pair_id(&self, slot_id: u8) -> Option<u8>;
 
     /// Retrieve the `CertificateInfo` associated with the certificate chain for the given slot.
     /// The `CertificateInfo` structure specifies the certificate model (such as DeviceID, Alias, or General),
@@ -137,7 +135,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `CertificateInfo` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
-    async fn cert_info(&self, slot_id: u8) -> Option<CertificateInfo>;
+    fn cert_info(&self, slot_id: u8) -> Option<CertificateInfo>;
 
     /// Get the KeyUsageMask associated with the certificate chain if SPDM responder supports
     /// multiple asymmetric keys in connection.
@@ -147,7 +145,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `KeyUsageMask` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
-    async fn key_usage_mask(&self, slot_id: u8) -> Option<KeyUsageMask>;
+    fn key_usage_mask(&self, slot_id: u8) -> Option<KeyUsageMask>;
 
     /// Write a certificate chain to a slot. The certificate chain is in ASN.1 DER-encoded
     /// X.509 v3 format and includes the root certificate as required by SPDM SET_CERTIFICATE.
@@ -165,7 +163,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `()` - Ok if successful, error otherwise.
-    async fn write_cert_chain(
+    fn write_cert_chain(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
@@ -183,7 +181,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `()` - Ok if successful, error otherwise.
-    async fn erase_cert_chain(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<()>;
+    fn erase_cert_chain(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<()>;
 }
 
 pub(crate) fn validate_cert_store(cert_store: &dyn SpdmCertStore) -> SpdmResult<()> {
@@ -194,13 +192,13 @@ pub(crate) fn validate_cert_store(cert_store: &dyn SpdmCertStore) -> SpdmResult<
     Ok(())
 }
 
-pub(crate) async fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
+pub(crate) fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
     let slot_count = cert_store.slot_count().min(MAX_CERT_SLOTS_SUPPORTED);
     let supported_slot_mask = (1 << slot_count) - 1;
 
     let mut provisioned_slot_mask = 0;
     for i in 0..slot_count {
-        if cert_store.is_provisioned(i).await {
+        if cert_store.is_provisioned(i) {
             provisioned_slot_mask |= 1 << i;
         }
     }
@@ -220,7 +218,7 @@ pub(crate) async fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
 ///
 /// # Returns
 /// * `hash` - The hash of the certificate chain.
-pub(crate) async fn spdm_cert_chain_hash(
+pub(crate) fn spdm_cert_chain_hash(
     cert_store: &dyn SpdmCertStore,
     slot_id: u8,
     asym_algo: AsymAlgo,
@@ -230,14 +228,14 @@ pub(crate) async fn spdm_cert_chain_hash(
         Err(CertStoreError::BufferTooSmall)?;
     }
 
-    let header = spdm_cert_chain_hdr(cert_store, slot_id, asym_algo).await?;
+    let header = spdm_cert_chain_hdr(cert_store, slot_id, asym_algo)?;
 
     // Length and reserved fields
     let header_bytes = header.as_bytes();
     let mut hash_ctx = HashContext::new();
     hash_ctx
         .init(HashAlgoType::SHA384, Some(header_bytes))
-        .await
+        
         .map_err(CertStoreError::CaliptraApi)?;
 
     // Hash the certificate chain
@@ -247,11 +245,11 @@ pub(crate) async fn spdm_cert_chain_hash(
     loop {
         let bytes_read = cert_store
             .get_cert_chain(asym_algo, slot_id, offset, &mut cert_portion)
-            .await?;
+            ?;
 
         hash_ctx
             .update(&cert_portion[..bytes_read])
-            .await
+            
             .map_err(CertStoreError::CaliptraApi)?;
 
         offset += bytes_read;
@@ -263,25 +261,25 @@ pub(crate) async fn spdm_cert_chain_hash(
     }
     hash_ctx
         .finalize(hash)
-        .await
+        
         .map_err(CertStoreError::CaliptraApi)
 }
 
-pub(crate) async fn spdm_cert_chain_len(
+pub(crate) fn spdm_cert_chain_len(
     cert_store: &dyn SpdmCertStore,
     slot_id: u8,
     asym_algo: AsymAlgo,
 ) -> CertStoreResult<usize> {
-    let cert_chain_len = cert_store.cert_chain_len(asym_algo, slot_id).await?;
+    let cert_chain_len = cert_store.cert_chain_len(asym_algo, slot_id)?;
     Ok(cert_chain_len + SPDM_CERT_CHAIN_METADATA_LEN)
 }
 
-async fn spdm_cert_chain_hdr(
+fn spdm_cert_chain_hdr(
     cert_store: &dyn SpdmCertStore,
     slot_id: u8,
     asym_algo: AsymAlgo,
 ) -> CertStoreResult<SpdmCertChainHeader> {
-    let cert_chain_len = spdm_cert_chain_len(cert_store, slot_id, asym_algo).await?;
+    let cert_chain_len = spdm_cert_chain_len(cert_store, slot_id, asym_algo)?;
 
     let mut header = SpdmCertChainHeader {
         length: cert_chain_len as u16,
@@ -292,19 +290,19 @@ async fn spdm_cert_chain_hdr(
     // Get the root certificate hash
     cert_store
         .root_cert_hash(asym_algo, slot_id, &mut header.root_hash)
-        .await?;
+        ?;
 
     Ok(header)
 }
 
-pub(crate) async fn spdm_read_cert_chain(
+pub(crate) fn spdm_read_cert_chain(
     cert_store: &dyn SpdmCertStore,
     slot_id: u8,
     asym_algo: AsymAlgo,
     offset: usize,
     cert_chain: &mut [u8],
 ) -> CertStoreResult<usize> {
-    let spdm_cert_chain_len = spdm_cert_chain_len(cert_store, slot_id, asym_algo).await?;
+    let spdm_cert_chain_len = spdm_cert_chain_len(cert_store, slot_id, asym_algo)?;
 
     let mut rem_len = spdm_cert_chain_len
         .saturating_sub(offset)
@@ -314,7 +312,7 @@ pub(crate) async fn spdm_read_cert_chain(
 
     // If the offset is within the metadata length, we need to read the metadata first
     if offset < SPDM_CERT_CHAIN_METADATA_LEN {
-        let header = spdm_cert_chain_hdr(cert_store, slot_id, asym_algo).await?;
+        let header = spdm_cert_chain_hdr(cert_store, slot_id, asym_algo)?;
 
         let header_bytes = header.as_bytes();
         let header_len = header_bytes.len();
@@ -337,7 +335,7 @@ pub(crate) async fn spdm_read_cert_chain(
         // Read the certificate chain portion
         let bytes_read = cert_store
             .get_cert_chain(asym_algo, slot_id, certchain_offset, rem_buffer)
-            .await?;
+            ?;
 
         data_len += bytes_read;
     }

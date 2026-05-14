@@ -7,13 +7,13 @@ use crate::vdm_handler::iana::ocp::caliptra_vdm::protocol::{
 use crate::vdm_handler::{VdmError, VdmResult};
 use caliptra_mcu_common_commands::{CaliptraCmdHandler, DeviceId};
 
-pub(crate) async fn handle_device_id(
+pub(crate) fn handle_device_id(
     handler: &dyn CaliptraCmdHandler,
     _req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
 ) -> VdmResult<CaliptraVdmCmdResult> {
     let mut device_id = DeviceId::default();
-    match handler.get_device_id(&mut device_id).await {
+    match handler.get_device_id(&mut device_id) {
         Ok(()) => {
             let mut len = (CaliptraCompletionCode::Success as u8)
                 .encode(rsp_buf)

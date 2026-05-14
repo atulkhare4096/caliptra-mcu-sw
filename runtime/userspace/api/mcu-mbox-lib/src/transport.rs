@@ -30,7 +30,7 @@ impl McuMboxTransport {
         }
     }
 
-    pub async fn receive_request<'a>(
+    pub fn receive_request<'a>(
         &mut self,
         buf: &'a mut [u8],
     ) -> Result<(CmdCode, &'a [u8]), TransportError> {
@@ -53,7 +53,7 @@ impl McuMboxTransport {
         let (cmd_opcode, req_len) = self
             .mbox
             .receive_command(buf, on_listening_cb)
-            .await
+            
             .map_err(|_| TransportError::DriverRxError)?;
 
         if req_len < size_of::<MailboxReqHeader>() {
@@ -71,7 +71,7 @@ impl McuMboxTransport {
         Ok((cmd_opcode, &buf[..req_len]))
     }
 
-    pub async fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
+    pub fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
         if resp.len() < size_of::<MailboxRespHeader>() {
             return Err(TransportError::BufferTooSmall);
         }
@@ -85,7 +85,7 @@ impl McuMboxTransport {
 
         self.mbox
             .send_response(resp)
-            .await
+            
             .map_err(|_| TransportError::DriverTxError)?;
 
         Ok(())

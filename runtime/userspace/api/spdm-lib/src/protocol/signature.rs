@@ -56,7 +56,7 @@ pub(crate) fn create_responder_signing_context(
     Ok(combined_spdm_prefix)
 }
 
-pub(crate) async fn get_tbs_via_response_code(
+pub(crate) fn get_tbs_via_response_code(
     spdm_version: SpdmVersion,
     resp_code: ReqRespCode,
     transcript_hash: [u8; SHA384_HASH_SIZE],
@@ -77,12 +77,12 @@ pub(crate) async fn get_tbs_via_response_code(
 
     hash_ctx
         .init(HashAlgoType::SHA384, Some(&message))
-        .await
+        
         .map_err(SignCtxError::CaliptraApi)?;
 
     hash_ctx
         .finalize(&mut tbs)
-        .await
+        
         .map_err(SignCtxError::CaliptraApi)?;
     Ok(tbs)
 }

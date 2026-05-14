@@ -155,7 +155,7 @@ fn vendor_def_resp_hdr_len(vendor_id_len: u8) -> usize {
     size_of::<VendorDefRespHdr>() - MAX_SPDM_VENDOR_ID_LEN as usize + vendor_id_len as usize
 }
 
-async fn process_vendor_defined_request<'a>(
+fn process_vendor_defined_request<'a>(
     ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -224,7 +224,7 @@ async fn process_vendor_defined_request<'a>(
     Ok((standards_body_id, vendor_id, vdm_req, vdm_req_len as usize))
 }
 
-async fn generate_vendor_defined_response<'a>(
+fn generate_vendor_defined_response<'a>(
     ctx: &mut SpdmContext<'a>,
     standard_id: StandardsBodyId,
     vendor_id: [u8; MAX_SPDM_VENDOR_ID_LEN as usize],
@@ -268,7 +268,7 @@ async fn generate_vendor_defined_response<'a>(
     // The temporary borrow ends after the await, so we can re-borrow in the match arms.
     match vdm_handler
         .handle_request(vdm_req_buf, rsp, &mut ctx.large_msg_ctx.buf[resp_hdr_len..])
-        .await
+        
     {
         Ok(len) => {
             resp_hdr.set_resp_len(len as u16);
@@ -304,7 +304,7 @@ async fn generate_vendor_defined_response<'a>(
     }
 }
 
-pub(crate) async fn handle_vendor_defined_request<'a>(
+pub(crate) fn handle_vendor_defined_request<'a>(
     ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -328,12 +328,12 @@ pub(crate) async fn handle_vendor_defined_request<'a>(
 
     // Process VENDOR_DEFINED_REQUEST
     let (standard_id, vendor_id, mut vdm_req, vdm_req_len) =
-        process_vendor_defined_request(ctx, spdm_hdr, req_payload).await?;
+        process_vendor_defined_request(ctx, spdm_hdr, req_payload)?;
 
     let mut vdm_req_buf = MessageBuf::from(&mut vdm_req[..vdm_req_len]);
     ctx.prepare_response_buffer(req_payload)?;
 
     // Generate VENDOR_DEFINED_RESPONSE
     generate_vendor_defined_response(ctx, standard_id, vendor_id, &mut vdm_req_buf, req_payload)
-        .await
+        
 }

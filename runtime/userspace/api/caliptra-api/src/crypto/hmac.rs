@@ -18,7 +18,7 @@ pub enum HkdfSalt<'a> {
 }
 
 impl Hmac {
-    pub async fn hmac(cmk: &Cmk, data: &[u8]) -> CaliptraApiResult<CmHmacResp> {
+    pub fn hmac(cmk: &Cmk, data: &[u8]) -> CaliptraApiResult<CmHmacResp> {
         let mailbox = Mailbox::new();
 
         let mut req = CmHmacReq {
@@ -36,11 +36,11 @@ impl Hmac {
 
         let mut rsp = CmHmacResp::default();
         let rsp_bytes = rsp.as_mut_bytes();
-        execute_mailbox_cmd(&mailbox, CmHmacReq::ID.0, req.as_mut_bytes(), rsp_bytes).await?;
+        execute_mailbox_cmd(&mailbox, CmHmacReq::ID.0, req.as_mut_bytes(), rsp_bytes)?;
         Ok(rsp)
     }
 
-    pub async fn hkdf_extract(
+    pub fn hkdf_extract(
         salt: HkdfSalt<'_>,
         ikm: &Cmk,
     ) -> CaliptraApiResult<CmHkdfExtractResp> {
@@ -61,7 +61,7 @@ impl Hmac {
                         "Salt size exceeds maximum allowed",
                     ));
                 }
-                let salt_cmk = Import::import(CmKeyUsage::Hmac, data).await?;
+                let salt_cmk = Import::import(CmKeyUsage::Hmac, data)?;
                 req.salt.0.copy_from_slice(&salt_cmk.cmk.0);
             }
         }
@@ -73,11 +73,11 @@ impl Hmac {
             req.as_mut_bytes(),
             rsp_bytes,
         )
-        .await?;
+        ?;
         Ok(rsp)
     }
 
-    pub async fn hkdf_expand(
+    pub fn hkdf_expand(
         prk: &Cmk,
         key_usage: CmKeyUsage,
         key_size: u32,
@@ -107,7 +107,7 @@ impl Hmac {
             req.as_mut_bytes(),
             rsp_bytes,
         )
-        .await?;
+        ?;
         Ok(rsp)
     }
 }

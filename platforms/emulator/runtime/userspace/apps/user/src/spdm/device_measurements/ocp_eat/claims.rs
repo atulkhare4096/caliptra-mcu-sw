@@ -116,7 +116,7 @@ struct VersionField {
 ///
 /// # Returns
 /// Returns number of bytes written on success, or an error if claim generation or encoding fails.
-pub async fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> MeasurementsResult<usize> {
+pub fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> MeasurementsResult<usize> {
     // version, svn, digests, integrity registers applicable to FW target envs
     // digests, raw values applicable to HW target envs
     let mut versions = [0u32; NUM_FW_TARGET_ENV];
@@ -161,13 +161,13 @@ pub async fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> Measurement
         &mut digests[..NUM_FW_TARGET_ENV],
         &mut journey_digests,
     )
-    .await?;
+    ?;
     fill_hw_config_info(
         &mut digests[NUM_FW_TARGET_ENV..],
         &mut raw_values[..NUM_HW_TARGET_ENV],
     )
-    .await?;
-    fill_sw_config_info(&mut raw_values[NUM_HW_TARGET_ENV..], &mut raw_value_masks).await?;
+    ?;
+    fill_sw_config_info(&mut raw_values[NUM_HW_TARGET_ENV..], &mut raw_value_masks)?;
 
     // Convert u32 versions to ArrayStrings
     for i in 0..NUM_FW_TARGET_ENV {
@@ -251,7 +251,7 @@ pub async fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> Measurement
 
     // 7. Generate EAT claims
     generate_eat_claims(EAT_DEFAULT_ISSUER, nonce, concise_evidence, claims_buf)
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)
 }
 
@@ -290,7 +290,7 @@ fn digest_words_to_bytes(words: &[u32; SHA384_HASH_WORDS]) -> [u8; SHA384_HASH_S
     digest
 }
 
-async fn fill_fw_config_info(
+fn fill_fw_config_info(
     versions: &mut [u32; NUM_FW_TARGET_ENV],
     svns: &mut [u32; NUM_FW_TARGET_ENV],
     digests: &mut [[u8; SHA384_HASH_SIZE]],
@@ -302,10 +302,10 @@ async fn fill_fw_config_info(
     // Populate versions, svns, digests, journey_digests from device state or other sources
     // for default FW components first
     let fw_info = DeviceState::fw_info()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
     let (_, _, fmc_version, rt_version) = DeviceState::fw_version()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
 
     // VERSIONS: Get from fw_version
@@ -322,7 +322,7 @@ async fn fill_fw_config_info(
 
     // JOURNEY DIGESTS: Get journey digests from PCRs
     let pcrs = PcrQuote::get_pcrs()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
 
     journey_digests[FMC_MEASUREMENT_INDEX] = pcrs[FMC_FW_JOURNEY_PCR_INDEX];
@@ -331,7 +331,7 @@ async fn fill_fw_config_info(
     // Populate for SOC FW components next
     #[allow(clippy::reversed_empty_ranges)]
     for i in 0..NUM_SOC_FW_COMPONENTS {
-        match DeviceState::image_info(SOC_FW_IDS[i]).await {
+        match DeviceState::image_info(SOC_FW_IDS[i]) {
             Ok(image_info) => {
                 versions[NUM_DEFAULT_FW_COMPONENTS + i] = 0;
                 // Keep SVN at 0 for SoC components for now.
@@ -348,7 +348,7 @@ async fn fill_fw_config_info(
     Ok(())
 }
 
-async fn fill_hw_config_info(
+fn fill_hw_config_info(
     digests: &mut [[u8; SHA384_HASH_SIZE]],
     raw_values: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>],
 ) -> MeasurementsResult<()> {
@@ -365,7 +365,7 @@ async fn fill_hw_config_info(
     Ok(())
 }
 
-async fn fill_sw_config_info(
+fn fill_sw_config_info(
     raw_values: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>],
     raw_value_masks: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>; NUM_SW_TARGET_ENV],
 ) -> MeasurementsResult<()> {

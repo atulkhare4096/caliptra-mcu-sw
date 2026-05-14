@@ -6,7 +6,7 @@ use crate::vdm_handler::pci_sig::tdisp::protocol::*;
 use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 
-pub(crate) async fn handle_get_device_interface_state(
+pub(crate) fn handle_get_device_interface_state(
     tdisp_responder: &mut TdispResponder<'_>,
     req_hdr: &TdispMessageHeader,
     rsp_buf: &mut MessageBuf<'_>,
@@ -17,7 +17,7 @@ pub(crate) async fn handle_get_device_interface_state(
     match tdisp_responder
         .driver
         .get_device_interface_state(function_id, &mut tdi_status)
-        .await
+        
     {
         Ok(0) => {
             if tdi_status != TdiStatus::Reserved {

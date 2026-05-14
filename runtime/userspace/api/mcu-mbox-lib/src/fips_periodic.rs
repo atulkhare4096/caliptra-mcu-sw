@@ -12,12 +12,9 @@ use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_alarm::{Convert, Hz, Milliseconds};
 use caliptra_mcu_libtock_console::Console;
 use caliptra_mcu_libtock_platform::Syscalls;
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtockasync::blocking;
 use core::fmt::Write;
 use core::sync::atomic::{AtomicU32, Ordering};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::mutex::Mutex;
-use embassy_sync::signal::Signal;
 
 /// Periodic FIPS self-test interval in milliseconds.
 /// Default: 60 seconds (60000 ms)
@@ -33,11 +30,8 @@ static ENABLED: AtomicU32 = AtomicU32::new(0);
 static ITERATIONS: AtomicU32 = AtomicU32::new(0);
 static LAST_RESULT: AtomicU32 = AtomicU32::new(RESULT_NOT_RUN);
 
-/// Signal to wake up the periodic task when state changes
-static STATE_CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-
-/// Mutex for alarm access
-static ALARM_MUTEX: Mutex<CriticalSectionRawMutex, ()> = Mutex::new(());
+/// Flag to wake up the periodic task when state changes
+static STATE_CHANGED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// Driver number for alarm
 const DRIVER_NUM: u32 = 0;
@@ -57,7 +51,7 @@ pub fn is_enabled() -> bool {
 pub fn set_enabled(enable: bool) {
     let new_value = if enable { 1 } else { 0 };
     ENABLED.store(new_value, Ordering::SeqCst);
-    STATE_CHANGED.signal(());
+    STATE_CHANGED.store(true, core::sync::atomic::Ordering::SeqCst);
 }
 
 /// Get the number of completed iterations.
@@ -75,20 +69,23 @@ pub fn get_status() -> (bool, u32, u32) {
     (is_enabled(), get_iterations(), get_last_result())
 }
 
-/// Async sleep helper
-async fn sleep_ms(ms: u32) {
+/// Blocking sleep helper
+fn sleep_ms(ms: u32) {
     use caliptra_mcu_libtock_platform::ErrorCode;
 
-    let _guard = ALARM_MUTEX.lock().await;
     let freq: Result<u32, ErrorCode> =
         DefaultSyscalls::command(DRIVER_NUM, command::FREQUENCY, 0, 0).to_result();
-    let freq = freq.map(Hz).unwrap_or(Hz(1000)); // Default to 1kHz if frequency read fails
+    let freq = freq.map(Hz).unwrap_or(Hz(1000));
 
     let ticks = Milliseconds(ms).to_ticks(freq).0;
 
-    let sub = TockSubscribe::subscribe::<DefaultSyscalls>(DRIVER_NUM, 0);
-    let _ = DefaultSyscalls::command(DRIVER_NUM, command::SET_RELATIVE, ticks, 0);
-    let _ = sub.await;
+    let _ = blocking::subscribe_and_wait::<DefaultSyscalls>(
+        DRIVER_NUM,
+        0,
+        command::SET_RELATIVE,
+        ticks,
+        0,
+    );
 }
 
 /// Run a single FIPS self-test iteration using the Caliptra mailbox.
@@ -97,7 +94,7 @@ async fn sleep_ms(ms: u32) {
 /// 1. Sends SELF_TEST_START to Caliptra
 /// 2. Polls SELF_TEST_GET_RESULTS until completion
 /// 3. Returns true on success, false on failure
-async fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
+fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
     // Start the self-test
     let mut req_buf = [0u8; 8]; // Minimal request buffer (just header)
     let mut resp_buf = [0u8; 8]; // Response buffer
@@ -108,7 +105,7 @@ async fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
         &mut req_buf,
         &mut resp_buf,
     )
-    .await;
+    ;
 
     if start_result.is_err() {
         writeln!(
@@ -123,7 +120,7 @@ async fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
     const MAX_POLL_ITERATIONS: u32 = 100;
     for _ in 0..MAX_POLL_ITERATIONS {
         // Wait a bit between polls
-        sleep_ms(100).await;
+        sleep_ms(100);
 
         // Get results
         let get_results = execute_mailbox_cmd(
@@ -132,7 +129,7 @@ async fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
             &mut req_buf,
             &mut resp_buf,
         )
-        .await;
+        ;
 
         match get_results {
             Ok(_) => {
@@ -158,8 +155,7 @@ async fn run_fips_self_test(caliptra_mbox: &Mailbox) -> bool {
 ///
 /// This task runs in the background and periodically executes FIPS self-tests
 /// when enabled.
-#[embassy_executor::task]
-pub async fn fips_periodic_task() {
+pub fn fips_periodic_task() {
     let caliptra_mbox = Mailbox::new();
 
     writeln!(
@@ -171,7 +167,7 @@ pub async fn fips_periodic_task() {
     loop {
         if is_enabled() {
             // Run self-test
-            let result = run_fips_self_test(&caliptra_mbox).await;
+            let result = run_fips_self_test(&caliptra_mbox);
 
             // Update state (load-modify-store since fetch_add not available on riscv32)
             let current = ITERATIONS.load(Ordering::SeqCst);
@@ -191,10 +187,12 @@ pub async fn fips_periodic_task() {
             .ok();
 
             // Wait for the interval before next test
-            sleep_ms(FIPS_PERIODIC_INTERVAL_MS).await;
+            sleep_ms(FIPS_PERIODIC_INTERVAL_MS);
         } else {
-            // Wait for enable signal
-            STATE_CHANGED.wait().await;
+            // Wait for enable signal (poll + yield)
+            while !STATE_CHANGED.swap(false, core::sync::atomic::Ordering::SeqCst) {
+                DefaultSyscalls::yield_wait();
+            }
         }
     }
 }

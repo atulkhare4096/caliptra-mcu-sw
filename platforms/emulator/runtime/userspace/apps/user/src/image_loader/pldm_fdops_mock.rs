@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -95,12 +94,11 @@ impl FdOpsObject {
             apply_ctx: RefCell::new(ProgressPercent::default()),
         }
     }
-    pub async fn wait_for_pldm_done() {
-        PLDM_DONE_SIGNAL.wait().await;
+    pub fn wait_for_pldm_done() {
+        PLDM_DONE_SIGNAL.wait();
     }
 }
 
-#[async_trait(?Send)]
 impl FdOps for FdOpsObject {
     fn get_device_identifiers(
         &self,
@@ -124,7 +122,7 @@ impl FdOps for FdOpsObject {
         Ok(())
     }
 
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
+    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
         Ok(PLDM_FWUP_BASELINE_TRANSFER_SIZE
             .max(ua_transfer_size.min(caliptra_mcu_pldm_lib::config::FD_MAX_XFER_SIZE)))
     }
@@ -147,7 +145,7 @@ impl FdOps for FdOpsObject {
         Ok(comp_resp_code)
     }
 
-    async fn query_download_offset_and_length(
+    fn query_download_offset_and_length(
         &self,
         component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
@@ -162,7 +160,7 @@ impl FdOps for FdOpsObject {
         }
     }
 
-    async fn download_fw_data(
+    fn download_fw_data(
         &self,
         offset: usize,
         data: &[u8],
@@ -206,7 +204,7 @@ impl FdOps for FdOpsObject {
         Ok(())
     }
 
-    async fn verify(
+    fn verify(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -224,7 +222,7 @@ impl FdOps for FdOpsObject {
         Ok(VerifyResult::VerifySuccess)
     }
 
-    async fn apply(
+    fn apply(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,

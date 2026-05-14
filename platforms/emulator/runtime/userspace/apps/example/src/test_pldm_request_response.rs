@@ -70,7 +70,7 @@ pub mod test {
         }
     }
 
-    pub async fn test_pldm_request_response() {
+    pub fn test_pldm_request_response() {
         let mut test_messages = TestMessages::<2>::default();
 
         test_messages.add(
@@ -93,7 +93,7 @@ pub mod test {
 
         for i in 0..test_messages.size {
             let test_message = &test_messages.messages[i];
-            let (length, info) = mctp_pldm.receive_request(&mut msg_buffer).await.unwrap();
+            let (length, info) = mctp_pldm.receive_request(&mut msg_buffer).unwrap();
 
             assert!(test_message.request.length == length as usize);
             assert!(
@@ -105,7 +105,7 @@ pub mod test {
                     &test_message.response.buffer[..test_message.response.length],
                     info,
                 )
-                .await
+                
                 .unwrap();
         }
     }

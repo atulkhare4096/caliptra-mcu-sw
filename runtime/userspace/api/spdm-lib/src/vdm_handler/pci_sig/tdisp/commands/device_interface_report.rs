@@ -24,7 +24,7 @@ struct GetDeviceIntfReportRespHdr {
 }
 impl CommonCodec for GetDeviceIntfReportRespHdr {}
 
-pub(crate) async fn handle_get_device_interface_report(
+pub(crate) fn handle_get_device_interface_report(
     tdisp_responder: &mut TdispResponder<'_>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
@@ -45,7 +45,7 @@ pub(crate) async fn handle_get_device_interface_report(
     match tdisp_responder
         .driver
         .get_device_interface_report_len(interface_id.function_id, &mut intf_report_len)
-        .await
+        
     {
         Ok(0) => {
             if req.offset as usize >= intf_report_len as usize {
@@ -82,7 +82,7 @@ pub(crate) async fn handle_get_device_interface_report(
             report_portion_buf,
             &mut copied,
         )
-        .await
+        
     {
         Ok(0) => {
             if copied != portion_len as usize {

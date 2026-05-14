@@ -20,19 +20,19 @@ pub const PCR_QUOTE_BUFFER_SIZE: usize = MLDSA87_QUOTE_RSP_LEN;
 pub struct PcrQuote;
 
 impl PcrQuote {
-    pub async fn pcr_quote(
+    pub fn pcr_quote(
         nonce: Option<&[u8]>,
         buffer: &mut [u8],
         with_pqc_sig: bool,
     ) -> CaliptraApiResult<usize> {
         if with_pqc_sig {
-            Self::pcr_quote_mldsa(nonce, buffer).await
+            Self::pcr_quote_mldsa(nonce, buffer)
         } else {
-            Self::pcr_quote_ecc384(nonce, buffer).await
+            Self::pcr_quote_ecc384(nonce, buffer)
         }
     }
 
-    async fn pcr_quote_mldsa(nonce: Option<&[u8]>, buffer: &mut [u8]) -> CaliptraApiResult<usize> {
+    fn pcr_quote_mldsa(nonce: Option<&[u8]>, buffer: &mut [u8]) -> CaliptraApiResult<usize> {
         let mailbox = Mailbox::new();
 
         if buffer.len() < MLDSA87_QUOTE_RSP_LEN {
@@ -47,7 +47,7 @@ impl PcrQuote {
         if let Some(nonce) = nonce {
             req.nonce.copy_from_slice(nonce);
         } else {
-            Rng::generate_random_number(&mut req.nonce).await?;
+            Rng::generate_random_number(&mut req.nonce)?;
         }
 
         let mut rsp_bytes = [0u8; size_of::<QuotePcrsMldsa87Resp>()];
@@ -58,7 +58,7 @@ impl PcrQuote {
             req_bytes,
             &mut rsp_bytes,
         )
-        .await?;
+        ?;
         if size != size_of::<QuotePcrsMldsa87Resp>() {
             return Err(CaliptraApiError::InvalidResponse);
         }
@@ -76,12 +76,12 @@ impl PcrQuote {
         Ok(MLDSA87_QUOTE_RSP_LEN)
     }
 
-    async fn pcr_quote_ecc384(nonce: Option<&[u8]>, buffer: &mut [u8]) -> CaliptraApiResult<usize> {
+    fn pcr_quote_ecc384(nonce: Option<&[u8]>, buffer: &mut [u8]) -> CaliptraApiResult<usize> {
         if buffer.len() < ECC384_QUOTE_RSP_LEN {
             return Err(CaliptraApiError::InvalidArgument("Buffer too small"));
         }
 
-        let resp = Self::get_quote_ecc384_resp(nonce).await?;
+        let resp = Self::get_quote_ecc384_resp(nonce)?;
         let resp_bytes = resp.as_bytes();
 
         buffer[..ECC384_QUOTE_RSP_LEN].copy_from_slice(
@@ -97,7 +97,7 @@ impl PcrQuote {
         }
     }
 
-    async fn get_quote_ecc384_resp(nonce: Option<&[u8]>) -> CaliptraApiResult<QuotePcrsEcc384Resp> {
+    fn get_quote_ecc384_resp(nonce: Option<&[u8]>) -> CaliptraApiResult<QuotePcrsEcc384Resp> {
         let mailbox = Mailbox::new();
 
         let mut req = QuotePcrsEcc384Req {
@@ -108,7 +108,7 @@ impl PcrQuote {
         if let Some(nonce) = nonce {
             req.nonce.copy_from_slice(nonce);
         } else {
-            Rng::generate_random_number(&mut req.nonce).await?;
+            Rng::generate_random_number(&mut req.nonce)?;
         }
 
         let req_bytes = req.as_mut_bytes();
@@ -120,7 +120,7 @@ impl PcrQuote {
             req_bytes,
             &mut resp_bytes,
         )
-        .await?;
+        ?;
         if size != size_of::<QuotePcrsEcc384Resp>() {
             return Err(CaliptraApiError::InvalidResponse);
         }
@@ -135,8 +135,8 @@ impl PcrQuote {
         Ok(resp)
     }
 
-    pub async fn get_pcrs() -> CaliptraApiResult<[[u8; SHA384_HASH_SIZE]; 32]> {
-        let resp = Self::get_quote_ecc384_resp(None).await?;
+    pub fn get_pcrs() -> CaliptraApiResult<[[u8; SHA384_HASH_SIZE]; 32]> {
+        let resp = Self::get_quote_ecc384_resp(None)?;
         let mut pcrs = [[0u8; SHA384_HASH_SIZE]; 32];
         // Copy all PCRs from the response
         pcrs.copy_from_slice(&resp.pcrs);

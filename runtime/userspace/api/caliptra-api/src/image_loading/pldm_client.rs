@@ -8,7 +8,6 @@ use caliptra_mcu_flash_image::{FlashHeader, ImageHeader};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use caliptra_mcu_libsyscall_caliptra::dma::{AXIAddr, DMAMapping};
-use embassy_executor::Spawner;
 use embassy_sync::signal::Signal;
 
 use caliptra_mcu_libtock_platform::ErrorCode;
@@ -28,17 +27,16 @@ const MAX_IMAGE_COUNT: u32 = 127;
 pub static PLDM_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 pub static IMAGE_LOADING_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-#[embassy_executor::task]
-async fn pldm_service_task(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
-    pldm_service(pldm_ops, spawner).await;
+fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
+    pldm_service(pldm_ops);
 }
 
-pub async fn pldm_service(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
-    let mut pldm_service_init: PldmService = PldmService::init(pldm_ops, spawner);
-    pldm_service_init.start().await.unwrap();
+pub fn pldm_service(pldm_ops: &'static dyn FdOps) {
+    let mut pldm_service_init: PldmService = PldmService::init(pldm_ops);
+    pldm_service_init.start().unwrap();
 }
 
-async fn pldm_download_header() -> Result<(), ErrorCode> {
+fn pldm_download_header() -> Result<(), ErrorCode> {
     PLDM_STATE.lock(|state| {
         let mut state = state.borrow_mut();
         *state = State::DownloadingHeader;
@@ -52,7 +50,7 @@ async fn pldm_download_header() -> Result<(), ErrorCode> {
     });
 
     PLDM_TASK_YIELD.signal(());
-    IMAGE_LOADING_TASK_YIELD.wait().await;
+    IMAGE_LOADING_TASK_YIELD.wait();
     let state = PLDM_STATE.lock(|state| *state.borrow());
     if state != State::HeaderDownloadComplete {
         return Err(ErrorCode::Fail);
@@ -70,7 +68,7 @@ async fn pldm_download_header() -> Result<(), ErrorCode> {
     Ok(())
 }
 
-pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCode> {
+pub fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCode> {
     let num_images = DOWNLOAD_CTX.lock(|ctx| {
         let ctx = ctx.borrow();
         let (header, _rest) = FlashHeader::ref_from_prefix(&ctx.header).unwrap();
@@ -97,7 +95,7 @@ pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCod
         // Wait for TOC DownloadComplete to be ready
         loop {
             PLDM_TASK_YIELD.signal(());
-            IMAGE_LOADING_TASK_YIELD.wait().await;
+            IMAGE_LOADING_TASK_YIELD.wait();
             let is_dowload_complete = PLDM_STATE.lock(|state| {
                 let mut state = state.borrow_mut();
                 if *state == State::TocDownloadComplete {
@@ -133,7 +131,7 @@ pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCod
     }
 }
 
-pub async fn pldm_download_image(
+pub fn pldm_download_image(
     load_address: AXIAddr,
     offset: u32,
     size: u32,
@@ -153,7 +151,7 @@ pub async fn pldm_download_image(
     });
 
     PLDM_TASK_YIELD.signal(());
-    IMAGE_LOADING_TASK_YIELD.wait().await;
+    IMAGE_LOADING_TASK_YIELD.wait();
     let state = PLDM_STATE.lock(|state| *state.borrow());
     if state != State::ImageDownloadComplete {
         return Err(ErrorCode::Fail);
@@ -161,8 +159,7 @@ pub async fn pldm_download_image(
     Ok(())
 }
 
-pub async fn initialize_pldm<'a, D: DMAMapping + 'static>(
-    spawner: Spawner,
+pub fn initialize_pldm<'a, D: DMAMapping + 'static>(
     descriptors: &'a [Descriptor],
     fw_params: &'a FirmwareParameters,
     dma_mapping: &'a D,
@@ -184,17 +181,15 @@ pub async fn initialize_pldm<'a, D: DMAMapping + 'static>(
         let stud_fd_ops: &'static mut StreamingFdOps<D> =
             unsafe { core::mem::transmute(&mut stud_fd_ops) };
 
-        spawner
-            .spawn(pldm_service_task(stud_fd_ops, spawner))
-            .unwrap();
+        pldm_service_task(stud_fd_ops);
 
-        IMAGE_LOADING_TASK_YIELD.wait().await;
+        IMAGE_LOADING_TASK_YIELD.wait();
         let state = PLDM_STATE.lock(|state| *state.borrow());
         if state != State::Initialized {
             return Err(ErrorCode::Fail);
         }
 
-        return pldm_download_header().await;
+        return pldm_download_header();
     }
     Ok(())
 }

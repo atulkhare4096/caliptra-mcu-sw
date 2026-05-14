@@ -150,7 +150,7 @@ impl SessionManager {
             .ok_or(SessionError::InvalidSessionId)
     }
 
-    pub async fn encode_secure_message(
+    pub fn encode_secure_message(
         &mut self,
         transport: &dyn SpdmTransport,
         app_data_buffer: &[u8],
@@ -196,7 +196,7 @@ impl SessionManager {
                 &plaintext_data[..encrypted_len],
                 &mut encrypted_data,
             )
-            .await?;
+            ?;
 
         let mut secure_message_len = session_id
             .encode(secure_message)
@@ -229,7 +229,7 @@ impl SessionManager {
         Ok(())
     }
 
-    pub async fn decode_secure_message(
+    pub fn decode_secure_message(
         &mut self,
         transport: &dyn SpdmTransport,
         secure_message: &mut MessageBuf<'_>,
@@ -281,7 +281,7 @@ impl SessionManager {
 
         let decrypted_size = session_info
             .decrypt_secure_message(associated_data, encrypted_data, &mut plaintext_buffer, tag)
-            .await?;
+            ?;
 
         let mut plaintext_msg = MessageBuf::from(&mut plaintext_buffer[..decrypted_size]);
 

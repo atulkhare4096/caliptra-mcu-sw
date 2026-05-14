@@ -13,21 +13,18 @@ use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyR
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
 use caliptra_mcu_pldm_lib::daemon::PldmService;
 use caliptra_mcu_pldm_lib::firmware_device::fd_ops::FdOps;
-use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
 pub static FW_UPDATE_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 pub static PLDM_DAEMON_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-#[embassy_executor::task]
-async fn pldm_service_task(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
-    let mut pldm_service_init: PldmService = PldmService::init(pldm_ops, spawner);
-    pldm_service_init.start().await.unwrap();
+fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
+    let mut pldm_service_init: PldmService = PldmService::init(pldm_ops);
+    pldm_service_init.start().unwrap();
 }
 
-pub async fn initialize_pldm(
-    spawner: Spawner,
+pub fn initialize_pldm(
     descriptors: &'static [Descriptor],
     fw_params: &'static FirmwareParameters,
     staging_memory: &'static dyn StagingMemory,
@@ -65,15 +62,13 @@ pub async fn initialize_pldm(
             ctx.staging_memory = Some(staging_memory);
         });
 
-        spawner
-            .spawn(pldm_service_task(static_update_fd_ops, spawner))
-            .unwrap();
+        pldm_service_task(static_update_fd_ops);
     }
     Ok(())
 }
 
-pub async fn pldm_wait(wait_state: State) -> Result<(), ErrorCode> {
-    FW_UPDATE_TASK_YIELD.wait().await;
+pub fn pldm_wait(wait_state: State) -> Result<(), ErrorCode> {
+    FW_UPDATE_TASK_YIELD.wait();
     let state = PLDM_STATE.lock(|state| *state.borrow());
     if state != wait_state {
         return Err(ErrorCode::Fail);

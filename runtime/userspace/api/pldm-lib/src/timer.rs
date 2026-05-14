@@ -4,16 +4,12 @@ use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_alarm::{Convert, Hz, Milliseconds};
 use caliptra_mcu_libtock_platform::{self as platform};
 use caliptra_mcu_libtock_platform::{DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::mutex::Mutex;
+use caliptra_mcu_libtockasync::blocking;
 
 pub struct AsyncAlarm<S: Syscalls = DefaultSyscalls, C: platform::subscribe::Config = DefaultConfig>(
     S,
     C,
 );
-
-static ALARM_MUTEX: Mutex<CriticalSectionRawMutex, ()> = Mutex::new(());
 
 impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
     /// Run a check against the console capsule to ensure it is present.
@@ -41,27 +37,20 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
         Ok(ticks.saturating_div(freq / 1000))
     }
 
-    pub async fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
+    pub fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
         let freq = Self::get_frequency()?;
         let ticks = time.to_ticks(freq).0;
-        Self::sleep_ticks(ticks).await
+        Self::sleep_ticks(ticks)
     }
 
-    pub async fn sleep_ticks(ticks: u32) -> Result<(), ErrorCode> {
-        // bad things happen if multiple tasks try to use the alarm at once
-        let guard = ALARM_MUTEX.lock().await;
-        let sub = TockSubscribe::subscribe::<S>(DRIVER_NUM, 0);
-        S::command(DRIVER_NUM, command::SET_RELATIVE, ticks, 0)
-            .to_result()
-            .map(|_when: u32| ())?;
-        let result = sub.await.map(|_| ());
-        drop(guard);
-        result
+    pub fn sleep_ticks(ticks: u32) -> Result<(), ErrorCode> {
+        blocking::subscribe_and_wait::<S>(DRIVER_NUM, 0, command::SET_RELATIVE, ticks, 0)?;
+        Ok(())
     }
 
-    pub async fn sleep(time: Milliseconds) {
+    pub fn sleep(time: Milliseconds) {
         // sleep_ticks handles mutex acquisition internally
-        let _ = AsyncAlarm::<DefaultSyscalls>::sleep_for(time).await;
+        let _ = AsyncAlarm::<DefaultSyscalls>::sleep_for(time);
     }
 }
 

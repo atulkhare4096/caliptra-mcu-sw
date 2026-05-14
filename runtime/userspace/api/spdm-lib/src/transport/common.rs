@@ -4,22 +4,20 @@ extern crate alloc;
 use crate::codec::CodecError;
 use crate::codec::MessageBuf;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libtock_platform::ErrorCode;
 
 pub type TransportResult<T> = Result<T, TransportError>;
 
-#[async_trait]
 pub trait SpdmTransport {
-    async fn send_request<'a>(
+    fn send_request<'a>(
         &mut self,
         dest_eid: u8,
         req: &mut MessageBuf<'a>,
         secure: Option<bool>,
     ) -> TransportResult<()>;
-    async fn receive_response<'a>(&mut self, rsp: &mut MessageBuf<'a>) -> TransportResult<bool>;
-    async fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool>;
-    async fn send_response<'a>(
+    fn receive_response<'a>(&mut self, rsp: &mut MessageBuf<'a>) -> TransportResult<bool>;
+    fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool>;
+    fn send_response<'a>(
         &mut self,
         resp: &mut MessageBuf<'a>,
         secure: bool,

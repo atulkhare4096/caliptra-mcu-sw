@@ -38,28 +38,28 @@ impl<'a> CmdInterface<'a> {
     }
 
     /// Handle a responder message (receive request, process, send response).
-    pub async fn handle_responder_msg(&mut self, msg_buf: &mut [u8]) -> Result<(), VdmLibError> {
+    pub fn handle_responder_msg(&mut self, msg_buf: &mut [u8]) -> Result<(), VdmLibError> {
         // Receive a request from the transport.
         let req_len = self
             .transport
             .receive_request(msg_buf)
-            .await
+            
             .map_err(|_| VdmLibError::TransportError)?;
 
         // Process the request and prepare the response.
-        let resp_len = self.process_request(msg_buf, req_len).await?;
+        let resp_len = self.process_request(msg_buf, req_len)?;
 
         // Send the response.
         self.transport
             .send_response(&msg_buf[..resp_len])
-            .await
+            
             .map_err(|_| VdmLibError::TransportError)?;
 
         Ok(())
     }
 
     /// Process a VDM request and generate a response.
-    async fn process_request(
+    fn process_request(
         &self,
         msg_buf: &mut [u8],
         req_len: usize,
@@ -112,12 +112,12 @@ impl<'a> CmdInterface<'a> {
         // Dispatch to the appropriate handler.
         let vdm_req_len = req_len - VDM_MSG_OFFSET;
         match command {
-            VdmCommand::FirmwareVersion => self.handle_firmware_version(msg_buf, vdm_req_len).await,
+            VdmCommand::FirmwareVersion => self.handle_firmware_version(msg_buf, vdm_req_len),
             VdmCommand::DeviceCapabilities => {
-                self.handle_device_capabilities(msg_buf, vdm_req_len).await
+                self.handle_device_capabilities(msg_buf, vdm_req_len)
             }
-            VdmCommand::DeviceId => self.handle_device_id(msg_buf, vdm_req_len).await,
-            VdmCommand::DeviceInfo => self.handle_device_info(msg_buf, vdm_req_len).await,
+            VdmCommand::DeviceId => self.handle_device_id(msg_buf, vdm_req_len),
+            VdmCommand::DeviceInfo => self.handle_device_info(msg_buf, vdm_req_len),
             _ => self.send_error_response(
                 msg_buf,
                 hdr.command_code,
@@ -127,7 +127,7 @@ impl<'a> CmdInterface<'a> {
     }
 
     /// Handle Firmware Version command.
-    async fn handle_firmware_version(
+    fn handle_firmware_version(
         &self,
         msg_buf: &mut [u8],
         req_len: usize,
@@ -145,7 +145,7 @@ impl<'a> CmdInterface<'a> {
         let result = self
             .unified_handler
             .get_firmware_version(area_index, &mut version)
-            .await;
+            ;
 
         // Build the response.
         let (completion_code, ver_bytes) = match result {
@@ -160,7 +160,7 @@ impl<'a> CmdInterface<'a> {
     }
 
     /// Handle Device Capabilities command.
-    async fn handle_device_capabilities(
+    fn handle_device_capabilities(
         &self,
         msg_buf: &mut [u8],
         _req_len: usize,
@@ -170,7 +170,7 @@ impl<'a> CmdInterface<'a> {
         let result = self
             .unified_handler
             .get_device_capabilities(&mut caps)
-            .await;
+            ;
 
         // Build the response.
         let caps_bytes = match result {
@@ -196,14 +196,14 @@ impl<'a> CmdInterface<'a> {
     }
 
     /// Handle Device ID command.
-    async fn handle_device_id(
+    fn handle_device_id(
         &self,
         msg_buf: &mut [u8],
         _req_len: usize,
     ) -> Result<usize, VdmLibError> {
         // Get the device ID using the unified handler.
         let mut device_id = DeviceId::default();
-        let result = self.unified_handler.get_device_id(&mut device_id).await;
+        let result = self.unified_handler.get_device_id(&mut device_id);
 
         // Build the response.
         let resp = match result {
@@ -222,7 +222,7 @@ impl<'a> CmdInterface<'a> {
     }
 
     /// Handle Device Info command.
-    async fn handle_device_info(
+    fn handle_device_info(
         &self,
         msg_buf: &mut [u8],
         req_len: usize,
@@ -240,7 +240,7 @@ impl<'a> CmdInterface<'a> {
         let result = self
             .unified_handler
             .get_device_info(info_index, &mut info)
-            .await;
+            ;
 
         // Build the response.
         let (completion_code, data) = match result {

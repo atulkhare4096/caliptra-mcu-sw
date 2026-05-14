@@ -7,7 +7,7 @@ use crate::vdm_handler::pci_sig::tdisp::{TdispCmdResult, TdispResponder};
 use crate::vdm_handler::{VdmError, VdmResult};
 use caliptra_mcu_libapi_caliptra::crypto::rng::Rng;
 
-pub(crate) async fn handle_lock_interface(
+pub(crate) fn handle_lock_interface(
     tdisp_responder: &mut TdispResponder<'_>,
     req_hdr: &TdispMessageHeader,
     req_buf: &mut MessageBuf<'_>,
@@ -23,7 +23,7 @@ pub(crate) async fn handle_lock_interface(
 
     let mut start_interface_nonce = [0u8; START_INTERFACE_NONCE_SIZE];
     if Rng::generate_random_number(&mut start_interface_nonce)
-        .await
+        
         .is_err()
     {
         return error_response!(TdispError::InsufficientEntropy);
@@ -36,7 +36,7 @@ pub(crate) async fn handle_lock_interface(
     match tdisp_responder
         .driver
         .lock_interface(req_hdr.interface_id.function_id, lock_interface_param)
-        .await
+        
     {
         Ok(0) => {
             let len = encode_u8_slice(&start_interface_nonce, rsp_buf).map_err(VdmError::Codec)?;

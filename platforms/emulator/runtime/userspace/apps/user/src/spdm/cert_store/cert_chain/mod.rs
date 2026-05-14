@@ -43,30 +43,30 @@ impl CertChain {
     }
 
     #[allow(dead_code)]
-    pub async fn refresh(&mut self) {
-        self.endorsement_cert_chain.refresh().await;
+    pub fn refresh(&mut self) {
+        self.endorsement_cert_chain.refresh();
         self.dpe_cert_chain.refresh();
-        self.leaf_cert.refresh().await;
+        self.leaf_cert.refresh();
     }
 
-    pub async fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
-        let endorsement_len = self.endorsement_cert_chain.size(asym_algo).await?;
-        let dpe_len = self.dpe_cert_chain.size(asym_algo).await?;
-        let leaf_len = self.leaf_cert.size(asym_algo).await?;
+    pub fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
+        let endorsement_len = self.endorsement_cert_chain.size(asym_algo)?;
+        let dpe_len = self.dpe_cert_chain.size(asym_algo)?;
+        let leaf_len = self.leaf_cert.size(asym_algo)?;
         let total_len = endorsement_len + dpe_len + leaf_len;
 
         Ok(total_len)
     }
 
-    pub async fn read(
+    pub fn read(
         &mut self,
         asym_algo: AsymAlgo,
         offset: usize,
         buf: &mut [u8],
     ) -> CertStoreResult<usize> {
-        let root_cert_chain_len = self.endorsement_cert_chain.size(asym_algo).await?;
-        let dpe_cert_chain_len = self.dpe_cert_chain.size(asym_algo).await?;
-        let leaf_cert_len = self.leaf_cert.size(asym_algo).await?;
+        let root_cert_chain_len = self.endorsement_cert_chain.size(asym_algo)?;
+        let dpe_cert_chain_len = self.dpe_cert_chain.size(asym_algo)?;
+        let leaf_cert_len = self.leaf_cert.size(asym_algo)?;
         let total_cert_chain_len = root_cert_chain_len + dpe_cert_chain_len + leaf_cert_len;
 
         if offset >= total_cert_chain_len {
@@ -83,7 +83,7 @@ impl CertChain {
                 let len = self
                     .endorsement_cert_chain
                     .read(asym_algo, cert_offset, &mut buf[pos..pos + to_read])
-                    .await?;
+                    ?;
                 to_read -= len;
                 cert_chain_offset += len;
                 pos += len;
@@ -92,7 +92,7 @@ impl CertChain {
                 let len = self
                     .dpe_cert_chain
                     .read(asym_algo, cert_offset, &mut buf[pos..pos + to_read])
-                    .await?;
+                    ?;
                 to_read -= len;
                 cert_chain_offset += len;
                 pos += len;
@@ -101,7 +101,7 @@ impl CertChain {
                 let len = self
                     .leaf_cert
                     .read(asym_algo, cert_offset, &mut buf[pos..pos + to_read])
-                    .await?;
+                    ?;
                 to_read -= len;
                 cert_chain_offset += len;
                 pos += len;
@@ -110,22 +110,22 @@ impl CertChain {
         Ok(pos)
     }
 
-    pub async fn root_cert_hash(
+    pub fn root_cert_hash(
         &self,
         asym_algo: AsymAlgo,
         cert_hash: &mut [u8; SHA384_HASH_SIZE],
     ) -> CertStoreResult<()> {
         self.endorsement_cert_chain
             .root_cert_hash(asym_algo, cert_hash)
-            .await
+            
     }
 
-    pub async fn sign<'a>(
+    pub fn sign<'a>(
         &self,
         asym_algo: AsymAlgo,
         hash: &'a [u8; SHA384_HASH_SIZE],
         signature: &'a mut [u8; ECC_P384_SIGNATURE_SIZE],
     ) -> CertStoreResult<()> {
-        self.leaf_cert.sign(asym_algo, hash, signature).await
+        self.leaf_cert.sign(asym_algo, hash, signature)
     }
 }

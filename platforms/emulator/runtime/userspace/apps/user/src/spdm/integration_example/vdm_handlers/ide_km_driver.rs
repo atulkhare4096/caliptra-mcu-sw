@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::ide_km::driver::{
     IdeDriver, IdeDriverError, IdeDriverResult,
 };
@@ -35,7 +34,6 @@ impl Default for TestIdeDriver {
     }
 }
 
-#[async_trait]
 impl IdeDriver for TestIdeDriver {
     fn port_config(&self, port_index: u8) -> IdeDriverResult<PortConfig> {
         // Test implementation - return a default config
@@ -162,7 +160,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(selective_reg_block)
     }
 
-    async fn key_prog(
+    fn key_prog(
         &mut self,
         _stream_id: u8,
         _key_info: KeyInfo,
@@ -174,7 +172,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(0x00) // Successful
     }
 
-    async fn key_set_go(
+    fn key_set_go(
         &mut self,
         _stream_id: u8,
         key_info: KeyInfo,
@@ -184,7 +182,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(key_info)
     }
 
-    async fn key_set_stop(
+    fn key_set_stop(
         &mut self,
         _stream_id: u8,
         key_info: KeyInfo,

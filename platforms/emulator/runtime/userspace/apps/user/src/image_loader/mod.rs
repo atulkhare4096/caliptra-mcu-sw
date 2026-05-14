@@ -12,7 +12,6 @@ mod pldm_fdops_mock;
 
 mod config;
 
-use async_trait::async_trait;
 use caliptra_api::mailbox::{
     ActivateFirmwareReq, ActivateFirmwareResp, CommandId, MailboxReqHeader,
 };
@@ -57,8 +56,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 const RESET_REASON_FW_HITLESS_UPD_RESET_MASK: u32 = 0x1;
 
-#[embassy_executor::task]
-pub async fn image_loading_task() {
+pub fn image_loading_task() {
     let mbox_sram = caliptra_mcu_libsyscall_caliptra::mbox_sram::MboxSram::<DefaultSyscalls>::new(
         caliptra_mcu_libsyscall_caliptra::mbox_sram::DRIVER_NUM_MCU_MBOX1_SRAM,
     );
@@ -87,7 +85,7 @@ pub async fn image_loading_task() {
             mbox_sram.release_lock().unwrap();
             mbox_sram.acquire_lock().unwrap();
         }
-        match image_loading(&EMULATED_DMA_MAPPING).await {
+        match image_loading(&EMULATED_DMA_MAPPING) {
             Ok(_) => {}
             Err(_) => System::exit(1),
         }
@@ -108,7 +106,7 @@ pub async fn image_loading_task() {
             mbox_sram.release_lock().unwrap();
             mbox_sram.acquire_lock().unwrap();
         }
-        match crate::firmware_update::firmware_update(&EMULATED_DMA_MAPPING).await {
+        match crate::firmware_update::firmware_update(&EMULATED_DMA_MAPPING) {
             Ok(_) => System::exit(0),
             Err(_) => System::exit(1),
         }
@@ -118,7 +116,7 @@ pub async fn image_loading_task() {
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), ErrorCode> {
+fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), ErrorCode> {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     writeln!(console_writer, "IMAGE_LOADER_APP: Hello async world!").unwrap();
     #[cfg(feature = "test-pldm-streaming-boot")]
@@ -131,10 +129,10 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
             PldmImageLoader::new(&fw_params, EXECUTOR.get().spawner(), dma_mapping);
         pldm_image_loader
             .load_and_authorize(config::streaming_boot_consts::IMAGE_ID1)
-            .await?;
+            ?;
         pldm_image_loader
             .load_and_authorize(config::streaming_boot_consts::IMAGE_ID2)
-            .await?;
+            ?;
         // Close the PLDM session
         pldm_image_loader.finalize()?;
         // Activate the SoC Images (set FW_EXEC_CTRL bit of the corresponding SoC)
@@ -142,7 +140,7 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
             config::streaming_boot_consts::IMAGE_ID1,
             config::streaming_boot_consts::IMAGE_ID2,
         ])
-        .await?;
+        ?;
     }
     #[cfg(any(
         feature = "test-flash-based-boot",
@@ -152,7 +150,7 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
         let mut boot_config = FlashBootConfig::new();
         let active_partition_id = boot_config
             .get_active_partition()
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         let active_partition = boot_config
             .get_partition_from_id(active_partition_id)
@@ -161,7 +159,7 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
         let active = (active_partition_id, active_partition);
 
         let pending = {
-            let pending_partition_id = boot_config.get_pending_partition().await;
+            let pending_partition_id = boot_config.get_pending_partition();
             if pending_partition_id.is_ok() {
                 let pending_partition_id = pending_partition_id.unwrap();
                 let pending_partition = boot_config
@@ -188,28 +186,28 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
 
         if let Some(pending) = pending {
             // Set the new Auth Manifest from the pending partition
-            flash_image_loader.set_auth_manifest().await?;
+            flash_image_loader.set_auth_manifest()?;
         }
 
         flash_image_loader
             .load_and_authorize(config::streaming_boot_consts::IMAGE_ID1)
-            .await?;
+            ?;
         flash_image_loader
             .load_and_authorize(config::streaming_boot_consts::IMAGE_ID2)
-            .await?;
+            ?;
         boot_config
             .set_partition_status(load_partition.0, PartitionStatus::BootSuccessful)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         boot_config
             .set_active_partition(load_partition.0)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         activate_soc_images(&[
             config::streaming_boot_consts::IMAGE_ID1,
             config::streaming_boot_consts::IMAGE_ID2,
         ])
-        .await?
+        ?
     }
 
     #[cfg(any(
@@ -225,7 +223,7 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
             "PLDM_APP: Starting PLDM service for testing..."
         )
         .unwrap();
-        if let Err(e) = pldm_service.start().await {
+        if let Err(e) = pldm_service.start() {
             writeln!(
                 console_writer,
                 "PLDM_APP: Error starting PLDM service: {:?}",
@@ -233,13 +231,13 @@ async fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), Err
             )
             .unwrap();
         }
-        pldm_fdops_mock::FdOpsObject::wait_for_pldm_done().await;
+        pldm_fdops_mock::FdOpsObject::wait_for_pldm_done();
     }
     Ok(())
 }
 
 #[allow(dead_code)]
-async fn activate_soc_images(fw_id_list: &[u32]) -> Result<(), ErrorCode> {
+fn activate_soc_images(fw_id_list: &[u32]) -> Result<(), ErrorCode> {
     let fw_ids = {
         let mut ids = [0u32; ActivateFirmwareReq::MAX_FW_ID_COUNT];
         for (i, fw_id) in fw_id_list.iter().enumerate() {
@@ -264,7 +262,7 @@ async fn activate_soc_images(fw_id_list: &[u32]) -> Result<(), ErrorCode> {
     loop {
         let result = mailbox
             .execute(CommandId::ACTIVATE_FIRMWARE.into(), req, response_buffer)
-            .await;
+            ;
         match result {
             Ok(_) => return Ok(()),
             Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -315,13 +313,12 @@ impl<D: DMAMapping + 'static> DMAMapping for FlashReaderDma<D> {
     }
 }
 
-#[async_trait(?Send)]
 impl<D: DMAMapping + 'static> DmaTransfer for FlashReaderDma<D> {
     fn max_transfer_size(&self) -> usize {
         MAX_DMA_TRANSFER_SIZE
     }
 
-    async fn transfer(
+    fn transfer(
         &self,
         src_offset: usize,
         dest_addr: AXIAddr,
@@ -332,7 +329,7 @@ impl<D: DMAMapping + 'static> DmaTransfer for FlashReaderDma<D> {
         let mut buffer = [0u8; MAX_DMA_TRANSFER_SIZE];
         self.flash
             .read(src_offset, length, &mut buffer[..length])
-            .await?;
+            ?;
         let source_address = self
             .dma_mapping
             .mcu_sram_to_mcu_axi(buffer.as_ptr() as u32)?;
@@ -342,6 +339,6 @@ impl<D: DMAMapping + 'static> DmaTransfer for FlashReaderDma<D> {
                 source: DMASource::Address(source_address),
                 dest_addr,
             })
-            .await
+            
     }
 }

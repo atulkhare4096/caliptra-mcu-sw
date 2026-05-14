@@ -8,7 +8,6 @@ mod pldm_context;
 mod pldm_fdops;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_api::mailbox::{
     AuthorizeAndStashReq, AuthorizeAndStashResp, CommandId, GetImageInfoReq, GetImageInfoResp,
     ImageHashSource, MailboxReqHeader, MailboxRespHeader, Request,
@@ -25,8 +24,6 @@ use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareP
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
 use caliptra_mcu_pldm_lib::daemon::PldmService;
-use dma_transfer::DmaTransfer;
-use embassy_executor::Spawner;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub const IMAGE_AUTHORIZED: u32 = 0xDEADC0DE;
@@ -36,7 +33,6 @@ pub struct PldmInstance<'a> {
     pub executor: TockExecutor,
 }
 
-#[async_trait(?Send)]
 pub trait ImageLoader {
     /// Loads the specified image to a storage mapped to the AXI bus memory map.
     ///
@@ -46,7 +42,7 @@ pub trait ImageLoader {
     /// # Returns
     /// - `Ok()`: Image has been loaded and authorized succesfully.
     /// - `Err(ErrorCode)`: Indication of the failure to load or authorize the image.
-    async fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode>;
+    fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode>;
 }
 
 pub struct FlashImageLoader<'a, T: DmaTransfer> {
@@ -55,9 +51,10 @@ pub struct FlashImageLoader<'a, T: DmaTransfer> {
     dma_transfer: &'a T,
 }
 
+use dma_transfer::DmaTransfer;
+
 pub struct PldmImageLoader<'a, D: DMAMapping + 'static> {
     mailbox: Mailbox,
-    spawner: Spawner,
     params: &'a PldmFirmwareDeviceParams<'a>,
     dma_mapping: &'static D,
 }
@@ -78,10 +75,9 @@ impl<'a, T: DmaTransfer> FlashImageLoader<'a, T> {
     }
 }
 
-#[async_trait(?Send)]
 impl<T: DmaTransfer> ImageLoader for FlashImageLoader<'_, T> {
-    async fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
-        let image_info = get_image_info(&self.mailbox, image_id).await?;
+    fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
+        let image_info = get_image_info(&self.mailbox, image_id)?;
         let load_address = convert_dma_cptra_addr_to_mcu_addr(
             self.dma_transfer,
             ((image_info.image_load_address_high as u64) << 32)
@@ -89,28 +85,28 @@ impl<T: DmaTransfer> ImageLoader for FlashImageLoader<'_, T> {
         )?;
         let mut header: [u8; core::mem::size_of::<FlashHeader>()] =
             [0; core::mem::size_of::<FlashHeader>()];
-        flash_client::flash_read_header(&self.flash, &mut header).await?;
+        flash_client::flash_read_header(&self.flash, &mut header)?;
         let (offset, size) =
-            flash_client::flash_read_toc(&self.flash, &header, image_info.component_id).await?;
+            flash_client::flash_read_toc(&self.flash, &header, image_info.component_id)?;
         flash_client::flash_load_image(
             self.dma_transfer,
             load_address,
             offset as usize,
             size as usize,
         )
-        .await?;
-        authorize_image(&self.mailbox, image_id, size).await?;
+        ?;
+        authorize_image(&self.mailbox, image_id, size)?;
         Ok(())
     }
 }
 
 impl<T: DmaTransfer> FlashImageLoader<'_, T> {
-    pub async fn set_auth_manifest(&self) -> Result<(), ErrorCode> {
+    pub fn set_auth_manifest(&self) -> Result<(), ErrorCode> {
         let mut header: [u8; core::mem::size_of::<FlashHeader>()] =
             [0; core::mem::size_of::<FlashHeader>()];
-        flash_client::flash_read_header(&self.flash, &mut header).await?;
+        flash_client::flash_read_header(&self.flash, &mut header)?;
         let (offset, size) =
-            flash_client::flash_read_toc(&self.flash, &header, SOC_MANIFEST_IDENTIFIER).await?;
+            flash_client::flash_read_toc(&self.flash, &header, SOC_MANIFEST_IDENTIFIER)?;
 
         let mut stream =
             FlashMailboxPayloadStream::new(&self.flash, offset as usize, size as usize);
@@ -121,7 +117,7 @@ impl<T: DmaTransfer> FlashImageLoader<'_, T> {
         };
 
         // Calculate the mailbox checksum
-        let mut checksum = stream.get_bytesum().await;
+        let mut checksum = stream.get_bytesum();
         for b in CommandId::VERIFY_AUTH_MANIFEST.0.to_le_bytes().iter() {
             checksum = checksum.wrapping_add(u32::from(*b));
         }
@@ -141,7 +137,7 @@ impl<T: DmaTransfer> FlashImageLoader<'_, T> {
                     &mut stream,
                     response_buffer,
                 )
-                .await;
+                ;
             match result {
                 Ok(_) => return Ok(()),
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -154,12 +150,10 @@ impl<T: DmaTransfer> FlashImageLoader<'_, T> {
 impl<'a, D: DMAMapping + 'static> PldmImageLoader<'a, D> {
     pub fn new(
         params: &'a PldmFirmwareDeviceParams,
-        spawner: Spawner,
         dma_mapping: &'static D,
     ) -> Self {
         Self {
             mailbox: Mailbox::new(),
-            spawner,
             params,
             dma_mapping,
         }
@@ -169,10 +163,9 @@ impl<'a, D: DMAMapping + 'static> PldmImageLoader<'a, D> {
     }
 }
 
-#[async_trait(?Send)]
 impl<D: DMAMapping + 'static> ImageLoader for PldmImageLoader<'_, D> {
-    async fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
-        let image_info = get_image_info(&self.mailbox, image_id).await?;
+    fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
+        let image_info = get_image_info(&self.mailbox, image_id)?;
         let load_address = convert_dma_cptra_addr_to_mcu_addr(
             self.dma_mapping,
             ((image_info.image_load_address_high as u64) << 32)
@@ -181,15 +174,14 @@ impl<D: DMAMapping + 'static> ImageLoader for PldmImageLoader<'_, D> {
 
         let result: Result<(), ErrorCode> = {
             pldm_client::initialize_pldm(
-                self.spawner,
                 self.params.descriptors,
                 self.params.fw_params,
                 self.dma_mapping,
             )
-            .await?;
-            let (offset, size) = pldm_client::pldm_download_toc(image_info.component_id).await?;
-            pldm_client::pldm_download_image(load_address, offset, size).await?;
-            authorize_image(&self.mailbox, image_id, size).await
+            ?;
+            let (offset, size) = pldm_client::pldm_download_toc(image_info.component_id)?;
+            pldm_client::pldm_download_image(load_address, offset, size)?;
+            authorize_image(&self.mailbox, image_id, size)
         };
         if result.is_err() {
             self.finalize()?;
@@ -209,7 +201,7 @@ fn convert_dma_cptra_addr_to_mcu_addr(
         .map_err(|_| ErrorCode::Fail)
 }
 
-async fn get_image_info(mailbox: &Mailbox, image_id: u32) -> Result<GetImageInfoResp, ErrorCode> {
+fn get_image_info(mailbox: &Mailbox, image_id: u32) -> Result<GetImageInfoResp, ErrorCode> {
     let mut req = GetImageInfoReq {
         hdr: MailboxReqHeader::default(),
         fw_id: image_id.to_le_bytes(),
@@ -224,7 +216,7 @@ async fn get_image_info(mailbox: &Mailbox, image_id: u32) -> Result<GetImageInfo
     loop {
         let result = mailbox
             .execute(GetImageInfoReq::ID.0, req_data, response_buffer)
-            .await;
+            ;
         match result {
             Ok(_) => break,
             Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -247,7 +239,7 @@ async fn get_image_info(mailbox: &Mailbox, image_id: u32) -> Result<GetImageInfo
 }
 
 /// Authorizes an image based on its ID.
-async fn authorize_image(mailbox: &Mailbox, image_id: u32, size: u32) -> Result<(), ErrorCode> {
+fn authorize_image(mailbox: &Mailbox, image_id: u32, size: u32) -> Result<(), ErrorCode> {
     let mut req = AuthorizeAndStashReq {
         hdr: MailboxReqHeader::default(),
         fw_id: image_id.to_le_bytes(),
@@ -266,7 +258,7 @@ async fn authorize_image(mailbox: &Mailbox, image_id: u32, size: u32) -> Result<
     loop {
         let result = mailbox
             .execute(AuthorizeAndStashReq::ID.0, req_data, response_buffer)
-            .await;
+            ;
         match result {
             Ok(_) => break,
             Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -302,11 +294,11 @@ impl<'a> FlashMailboxPayloadStream<'a> {
         // Reset the cursor to the starting offset
         self.cursor = self.offset;
     }
-    pub async fn get_bytesum(&mut self) -> u32 {
+    pub fn get_bytesum(&mut self) -> u32 {
         self.reset();
         let mut sum = 0u32;
         let mut buffer = [0u8; 256];
-        while let Ok(bytes_read) = self.read(&mut buffer).await {
+        while let Ok(bytes_read) = self.read(&mut buffer) {
             if bytes_read == 0 {
                 break; // No more data to read
             }
@@ -319,13 +311,12 @@ impl<'a> FlashMailboxPayloadStream<'a> {
     }
 }
 
-#[async_trait(?Send)]
 impl PayloadStream for FlashMailboxPayloadStream<'_> {
     fn size(&self) -> usize {
         self.len
     }
 
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode> {
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode> {
         if (self.cursor - self.offset) >= self.len {
             return Ok(0); // No more data to read
         }
@@ -333,7 +324,7 @@ impl PayloadStream for FlashMailboxPayloadStream<'_> {
         let bytes_to_read = (self.len - (self.cursor - self.offset)).min(buffer.len());
         self.flash
             .read(self.cursor, bytes_to_read, &mut buffer[..bytes_to_read])
-            .await?;
+            ?;
         self.cursor += bytes_to_read;
         Ok(bytes_to_read)
     }

@@ -20,7 +20,7 @@ fn external_ram_to_axi_address(addr: u32) -> u64 {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_dma_xfer_local_to_local() {
+pub(crate) fn test_dma_xfer_local_to_local() {
     writeln!(
         Console::<DefaultSyscalls>::writer(),
         "Starting test_dma_xfer_local_to_local"
@@ -40,7 +40,7 @@ pub(crate) async fn test_dma_xfer_local_to_local() {
         dest_addr: dest_address,
     };
 
-    dma_syscall.xfer(&transaction).await.unwrap();
+    dma_syscall.xfer(&transaction).unwrap();
 
     if source_buffer == dest_buffer {
         writeln!(
@@ -57,7 +57,7 @@ pub(crate) async fn test_dma_xfer_local_to_local() {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_dma_xfer_local_to_external() {
+pub(crate) fn test_dma_xfer_local_to_external() {
     writeln!(
         Console::<DefaultSyscalls>::writer(),
         "Starting test_dma_xfer_local_to_external"
@@ -76,7 +76,7 @@ pub(crate) async fn test_dma_xfer_local_to_external() {
         source: DMASource::Address(source_address),
         dest_addr: dest_address,
     };
-    dma_syscall.xfer(&transaction).await.unwrap();
+    dma_syscall.xfer(&transaction).unwrap();
 
     // Transfer from external RAM back to another local RAM buffer
     let transaction = DMATransaction {
@@ -84,7 +84,7 @@ pub(crate) async fn test_dma_xfer_local_to_external() {
         source: DMASource::Address(dest_address),
         dest_addr: local_ram_to_axi_address(&dest_buffer as *const _ as u32),
     };
-    dma_syscall.xfer(&transaction).await.unwrap();
+    dma_syscall.xfer(&transaction).unwrap();
 
     if source_buffer == dest_buffer {
         writeln!(

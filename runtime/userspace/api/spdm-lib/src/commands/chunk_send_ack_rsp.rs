@@ -251,7 +251,7 @@ fn process_chunk_send(
     }))
 }
 
-async fn generate_chunk_send_ack<'a>(
+fn generate_chunk_send_ack<'a>(
     ctx: &mut SpdmContext<'a>,
     info: ChunkSendInfo,
     rsp: &mut MessageBuf<'a>,
@@ -282,7 +282,7 @@ async fn generate_chunk_send_ack<'a>(
             .map_err(|e| (false, CommandError::Codec(e)))?;
 
         // Dispatch the large request — handler writes ResponseToLargeRequest into rsp
-        ctx.handle_large_request_payload(rsp).await?;
+        ctx.handle_large_request_payload(rsp)?;
 
         // Encode the CHUNK_SEND_ACK header (fills in the reserved space)
         encode_chunk_send_ack_hdr(version, false, info.handle, info.chunk_seq_num, rsp)?;
@@ -313,7 +313,7 @@ fn generate_chunk_send_early_error_ack(
     Ok(())
 }
 
-pub(crate) async fn handle_chunk_send<'a>(
+pub(crate) fn handle_chunk_send<'a>(
     ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req: &mut MessageBuf<'a>,
@@ -327,7 +327,7 @@ pub(crate) async fn handle_chunk_send<'a>(
 
     ctx.prepare_response_buffer(req)?;
     match result {
-        ChunkSendProcessResult::Ack(info) => generate_chunk_send_ack(ctx, info, req).await,
+        ChunkSendProcessResult::Ack(info) => generate_chunk_send_ack(ctx, info, req),
         ChunkSendProcessResult::EarlyError {
             handle,
             chunk_seq_num,
@@ -346,7 +346,6 @@ mod tests {
     use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
     use alloc::boxed::Box;
     use alloc::vec;
-    use async_trait::async_trait;
     use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
     use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 
@@ -354,9 +353,8 @@ mod tests {
 
     struct TestTransport;
 
-    #[async_trait]
     impl SpdmTransport for TestTransport {
-        async fn send_request<'a>(
+        fn send_request<'a>(
             &mut self,
             _dest_eid: u8,
             _req: &mut MessageBuf<'a>,
@@ -365,21 +363,21 @@ mod tests {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn receive_response<'a>(
+        fn receive_response<'a>(
             &mut self,
             _rsp: &mut MessageBuf<'a>,
         ) -> TransportResult<bool> {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn receive_request<'a>(
+        fn receive_request<'a>(
             &mut self,
             _req: &mut MessageBuf<'a>,
         ) -> TransportResult<bool> {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn send_response<'a>(
+        fn send_response<'a>(
             &mut self,
             _resp: &mut MessageBuf<'a>,
             _secure: bool,
@@ -402,17 +400,16 @@ mod tests {
 
     static SPDM_VERSIONS: &[SpdmVersion] = &[SpdmVersion::V12];
 
-    #[async_trait]
     impl SpdmCertStore for TestCertStore {
         fn slot_count(&self) -> u8 {
             0
         }
 
-        async fn is_provisioned(&self, _slot_id: u8) -> bool {
+        fn is_provisioned(&self, _slot_id: u8) -> bool {
             false
         }
 
-        async fn cert_chain_len(
+        fn cert_chain_len(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -420,7 +417,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn get_cert_chain<'a>(
+        fn get_cert_chain<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -430,7 +427,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn root_cert_hash<'a>(
+        fn root_cert_hash<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -439,7 +436,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn sign_hash<'a>(
+        fn sign_hash<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -449,7 +446,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn write_cert_chain(
+        fn write_cert_chain(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -460,7 +457,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn erase_cert_chain(
+        fn erase_cert_chain(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -468,22 +465,21 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
+        fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
             None
         }
 
-        async fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
+        fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
             None
         }
 
-        async fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
+        fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
             None
         }
     }
 
-    #[async_trait]
     impl SpdmMeasurementValue for TestMeasurements {
-        async fn get_measurement_value(
+        fn get_measurement_value(
             &mut self,
             _index: u8,
             _nonce: &[u8],

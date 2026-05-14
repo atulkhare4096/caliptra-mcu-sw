@@ -30,7 +30,7 @@ impl FlashBootConfig {
         }
     }
 
-    pub async fn read_partition_table(&self) -> Result<PartitionTable, ErrorCode> {
+    pub fn read_partition_table(&self) -> Result<PartitionTable, ErrorCode> {
         let mut partition_table_data: [u8; core::mem::size_of::<PartitionTable>()] =
             [0; core::mem::size_of::<PartitionTable>()];
         self.flash_partition_syscall
@@ -39,7 +39,7 @@ impl FlashBootConfig {
                 core::mem::size_of::<PartitionTable>(),
                 &mut partition_table_data,
             )
-            .await?;
+            ?;
         let (partition_table, _) =
             PartitionTable::read_from_prefix(&partition_table_data).map_err(|_| ErrorCode::Fail)?;
         // Verify checksum
@@ -63,13 +63,13 @@ impl FlashBootConfig {
 }
 
 impl BootConfigAsync for FlashBootConfig {
-    async fn get_partition_status(
+    fn get_partition_status(
         &self,
         partition_id: PartitionId,
     ) -> Result<PartitionStatus, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         match partition_id {
             PartitionId::A => Ok(partition_table
@@ -84,14 +84,14 @@ impl BootConfigAsync for FlashBootConfig {
         }
     }
 
-    async fn set_partition_status(
+    fn set_partition_status(
         &mut self,
         partition_id: PartitionId,
         status: PartitionStatus,
     ) -> Result<(), BootConfigError> {
         let mut partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         match partition_id {
             PartitionId::A => partition_table.partition_a_status = status as u16,
@@ -108,32 +108,32 @@ impl BootConfigAsync for FlashBootConfig {
                 core::mem::size_of::<PartitionTable>(),
                 partition_table.as_bytes(),
             )
-            .await
+            
             .map_err(|_| BootConfigError::WriteFailed)?;
         Ok(())
     }
 
-    async fn is_rollback_enabled(&self) -> Result<bool, BootConfigError> {
+    fn is_rollback_enabled(&self) -> Result<bool, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         Ok(partition_table.rollback_enable == RollbackEnable::Enabled as u32)
     }
 
-    async fn get_active_partition(&self) -> Result<PartitionId, BootConfigError> {
+    fn get_active_partition(&self) -> Result<PartitionId, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         let (active_partition, _) = partition_table.get_active_partition();
         Ok(active_partition)
     }
 
-    async fn get_pending_partition(&self) -> Result<PartitionId, BootConfigError> {
+    fn get_pending_partition(&self) -> Result<PartitionId, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         let (active_partition, _) = partition_table.get_active_partition();
 
@@ -143,17 +143,17 @@ impl BootConfigAsync for FlashBootConfig {
             _ => Ok(PartitionId::A),
         }?;
 
-        if self.get_partition_status(other_partition).await? == PartitionStatus::Valid {
+        if self.get_partition_status(other_partition)? == PartitionStatus::Valid {
             Ok(other_partition)
         } else {
             Err(BootConfigError::InvalidStatus)
         }
     }
 
-    async fn get_inactive_partition(&self) -> Result<PartitionId, BootConfigError> {
+    fn get_inactive_partition(&self) -> Result<PartitionId, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         let (active_partition, _) = partition_table.get_active_partition();
         match active_partition {
@@ -163,13 +163,13 @@ impl BootConfigAsync for FlashBootConfig {
         }
     }
 
-    async fn set_active_partition(
+    fn set_active_partition(
         &mut self,
         partition_id: PartitionId,
     ) -> Result<(), BootConfigError> {
         let mut partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         partition_table.set_active_partition(partition_id);
         partition_table.populate_checksum(&StandAloneChecksumCalculator::new());
@@ -179,18 +179,18 @@ impl BootConfigAsync for FlashBootConfig {
                 core::mem::size_of::<PartitionTable>(),
                 partition_table.as_bytes(),
             )
-            .await
+            
             .map_err(|_| BootConfigError::WriteFailed)?;
         Ok(())
     }
 
-    async fn increment_boot_count(
+    fn increment_boot_count(
         &self,
         partition_id: PartitionId,
     ) -> Result<u16, BootConfigError> {
         let mut partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         let boot_count = match partition_id {
             PartitionId::A => {
@@ -213,15 +213,15 @@ impl BootConfigAsync for FlashBootConfig {
                 core::mem::size_of::<PartitionTable>(),
                 partition_table.as_bytes(),
             )
-            .await
+            
             .map_err(|_| BootConfigError::WriteFailed)?;
         Ok(boot_count)
     }
 
-    async fn get_boot_count(&self, partition_id: PartitionId) -> Result<u16, BootConfigError> {
+    fn get_boot_count(&self, partition_id: PartitionId) -> Result<u16, BootConfigError> {
         let partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         match partition_id {
             PartitionId::A => Ok(partition_table.partition_a_boot_count),
@@ -230,10 +230,10 @@ impl BootConfigAsync for FlashBootConfig {
         }
     }
 
-    async fn set_rollback_enable(&mut self, enable: bool) -> Result<(), BootConfigError> {
+    fn set_rollback_enable(&mut self, enable: bool) -> Result<(), BootConfigError> {
         let mut partition_table = self
             .read_partition_table()
-            .await
+            
             .map_err(|_| BootConfigError::ReadFailed)?;
         partition_table.rollback_enable = if enable {
             RollbackEnable::Enabled as u32
@@ -247,7 +247,7 @@ impl BootConfigAsync for FlashBootConfig {
                 core::mem::size_of::<PartitionTable>(),
                 partition_table.as_bytes(),
             )
-            .await
+            
             .map_err(|_| BootConfigError::WriteFailed)?;
         Ok(())
     }

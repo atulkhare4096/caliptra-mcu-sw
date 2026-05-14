@@ -8,7 +8,6 @@ use crate::vdm_handler::{
     VdmError, VdmHandler, VdmProtocolHandler, VdmRegistryMatcher, VdmResponder, VdmResult,
 };
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub mod ide_km;
@@ -57,9 +56,8 @@ impl<'a> PciSigCmdHandler<'a> {
     }
 }
 
-#[async_trait]
 impl VdmResponder for PciSigCmdHandler<'_> {
-    async fn handle_request(
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,
@@ -74,7 +72,7 @@ impl VdmResponder for PciSigCmdHandler<'_> {
                 rsp_buf.reserve(hdr_len).map_err(VdmError::Codec)?;
                 let mut len = handler
                     .handle_request(req_buf, rsp_buf, large_rsp_buf)
-                    .await?;
+                    ?;
                 let hdr = PciSigProtocolHdr { protocol_id };
                 len += hdr.encode(rsp_buf).map_err(VdmError::Codec)?;
                 return Ok(len);

@@ -152,7 +152,7 @@ pub(crate) struct CertificateChainResp {
     pub certificate_chain: [u8; MAX_CERT_CHUNK_SIZE],
 }
 
-pub async fn execute_mailbox_cmd(
+pub fn execute_mailbox_cmd(
     mailbox: &Mailbox,
     cmd: u32,
     req_bytes: &mut [u8],
@@ -161,7 +161,7 @@ pub async fn execute_mailbox_cmd(
     mailbox
         .populate_checksum(cmd, req_bytes)
         .map_err(CaliptraApiError::Syscall)?;
-    match mailbox.execute(cmd, req_bytes, resp_bytes).await {
+    match mailbox.execute(cmd, req_bytes, resp_bytes) {
         Ok(size) => Ok(size),
         Err(MailboxError::ErrorCode(ErrorCode::Busy)) => Err(CaliptraApiError::MailboxBusy)?,
         Err(e) => Err(CaliptraApiError::Mailbox(e))?,

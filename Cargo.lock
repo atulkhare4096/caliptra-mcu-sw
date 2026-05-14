@@ -1364,7 +1364,6 @@ dependencies = [
 name = "caliptra-mcu-libsyscall-caliptra"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "caliptra-api",
  "caliptra-mcu-libtock_console",
  "caliptra-mcu-libtock_platform",
@@ -1373,7 +1372,6 @@ dependencies = [
  "caliptra-mcu-libtockasync",
  "caliptra-mcu-mbox-common",
  "caliptra-mcu-registers-generated",
- "embassy-sync",
 ]
 
 [[package]]

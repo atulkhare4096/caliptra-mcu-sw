@@ -4,7 +4,6 @@ extern crate alloc;
 
 use crate::vdm_handler::pci_sig::ide_km::protocol::*;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdeDriverError {
@@ -25,7 +24,6 @@ pub type IdeDriverResult<T> = Result<T, IdeDriverError>;
 ///
 /// Provides an interface for Integrity and Data Encryption (IDE) key management operations.
 /// This trait abstracts hardware-specific implementations for different platforms.
-#[async_trait]
 pub trait IdeDriver: Send + Sync {
     /// Get the port configuration for a given port index.
     ///
@@ -90,7 +88,7 @@ pub trait IdeDriver: Send + Sync {
     /// - `02h`: Unsupported Port Index value
     /// - `03h`: Unsupported value in other fields
     /// - `04h`: Unspecified Failure
-    async fn key_prog(
+    fn key_prog(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -109,7 +107,7 @@ pub trait IdeDriver: Send + Sync {
     /// # Returns
     /// A result containing the updated `KeyInfo` after starting the key set, or an
     /// error if the operation fails.
-    async fn key_set_go(
+    fn key_set_go(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -126,7 +124,7 @@ pub trait IdeDriver: Send + Sync {
     /// # Returns
     /// A result containing the updated `KeyInfo` after stopping the key set, or an error
     /// if the operation fails.
-    async fn key_set_stop(
+    fn key_set_stop(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -149,7 +147,6 @@ mod tests {
         num_addr_association_reg_blocks: u8,
     }
 
-    #[async_trait]
     impl IdeDriver for ExampleIdeDriver {
         fn port_config(&self, port_index: u8) -> IdeDriverResult<PortConfig> {
             // Test implementation - return a default config
@@ -276,7 +273,7 @@ mod tests {
             Ok(selective_reg_block)
         }
 
-        async fn key_prog(
+        fn key_prog(
             &mut self,
             _stream_id: u8,
             _key_info: KeyInfo,
@@ -288,7 +285,7 @@ mod tests {
             Ok(0x00) // Successful
         }
 
-        async fn key_set_go(
+        fn key_set_go(
             &mut self,
             _stream_id: u8,
             key_info: KeyInfo,
@@ -298,7 +295,7 @@ mod tests {
             Ok(key_info)
         }
 
-        async fn key_set_stop(
+        fn key_set_stop(
             &mut self,
             _stream_id: u8,
             key_info: KeyInfo,

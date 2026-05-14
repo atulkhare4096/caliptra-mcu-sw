@@ -47,7 +47,7 @@ impl CertContext {
         }
     }
 
-    pub async fn get_idev_csr(
+    pub fn get_idev_csr(
         &mut self,
         csr_der: &mut [u8; IDEV_ECC_CSR_MAX_SIZE],
     ) -> CaliptraApiResult<usize> {
@@ -62,7 +62,7 @@ impl CertContext {
         let req_bytes = req.as_mut_bytes();
         let resp_bytes = resp.as_mut_bytes();
 
-        execute_mailbox_cmd(&self.mbox, GetIdevCsrReq::ID.0, req_bytes, resp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, GetIdevCsrReq::ID.0, req_bytes, resp_bytes)?;
 
         let resp = GetIdevCsrResp::ref_from_bytes(resp_bytes)
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
@@ -78,7 +78,7 @@ impl CertContext {
         Ok(resp.data_size as usize)
     }
 
-    pub async fn populate_idev_ecc384_cert(&mut self, cert: &[u8]) -> CaliptraApiResult<()> {
+    pub fn populate_idev_ecc384_cert(&mut self, cert: &[u8]) -> CaliptraApiResult<()> {
         if cert.len() > PopulateIdevEcc384CertReq::MAX_CERT_SIZE {
             return Err(CaliptraApiError::InvalidArgument("Invalid cert size"));
         }
@@ -93,32 +93,32 @@ impl CertContext {
         let mut resp = MailboxRespHeader::default();
         let resp_bytes = resp.as_mut_bytes();
 
-        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes)?;
         Ok(())
     }
 
-    pub async fn get_ldev_ecc384_cert(
+    pub fn get_ldev_ecc384_cert(
         &mut self,
         cert: &mut [u8; MAX_ECC_CERT_SIZE],
     ) -> CaliptraApiResult<usize> {
-        self.get_ecc384_cert::<GetLdevEcc384CertReq>(cert).await
+        self.get_ecc384_cert::<GetLdevEcc384CertReq>(cert)
     }
 
-    pub async fn get_fmc_alias_ecc384_cert(
+    pub fn get_fmc_alias_ecc384_cert(
         &mut self,
         cert: &mut [u8; MAX_ECC_CERT_SIZE],
     ) -> CaliptraApiResult<usize> {
-        self.get_ecc384_cert::<GetFmcAliasEcc384CertReq>(cert).await
+        self.get_ecc384_cert::<GetFmcAliasEcc384CertReq>(cert)
     }
 
-    pub async fn get_rt_alias_384cert(
+    pub fn get_rt_alias_384cert(
         &mut self,
         cert: &mut [u8; MAX_ECC_CERT_SIZE],
     ) -> CaliptraApiResult<usize> {
-        self.get_ecc384_cert::<GetRtAliasEcc384CertReq>(cert).await
+        self.get_ecc384_cert::<GetRtAliasEcc384CertReq>(cert)
     }
 
-    pub async fn get_attested_csr(
+    pub fn get_attested_csr(
         &mut self,
         algo: AsymAlgo,
         key_id: u32,
@@ -132,7 +132,7 @@ impl CertContext {
                     nonce: *nonce,
                     ..Default::default()
                 };
-                self.get_attested_csr_inner(&mut req, csr_data).await
+                self.get_attested_csr_inner(&mut req, csr_data)
             }
             AsymAlgo::MlDsa87 => {
                 let mut req = GetAttestedMldsaCsrReq {
@@ -140,12 +140,12 @@ impl CertContext {
                     nonce: *nonce,
                     ..Default::default()
                 };
-                self.get_attested_csr_inner(&mut req, csr_data).await
+                self.get_attested_csr_inner(&mut req, csr_data)
             }
         }
     }
 
-    pub async fn certify_key(
+    pub fn certify_key(
         &mut self,
         cert: &mut [u8],
         label: Option<&[u8; KEY_LABEL_SIZE]>,
@@ -179,7 +179,7 @@ impl CertContext {
             &mut Command::CertifyKey(CertifyKeyCommand::P384(&dpe_cmd)),
             &mut mbox_resp,
         )
-        .await?;
+        ?;
 
         let data_size = InvokeDpeResp::DATA_MAX_SIZE.min(mbox_resp.data_size as usize);
         let data = &mbox_resp.data[..data_size];
@@ -213,7 +213,7 @@ impl CertContext {
         Ok(cert_len)
     }
 
-    pub async fn sign(
+    pub fn sign(
         &mut self,
         key_label: Option<&[u8; KEY_LABEL_SIZE]>,
         digest: &[u8],
@@ -243,7 +243,7 @@ impl CertContext {
             &mut Command::Sign(SignCommand::P384(&dpe_cmd)),
             &mut mbox_resp,
         )
-        .await?;
+        ?;
 
         let data_size = InvokeDpeResp::DATA_MAX_SIZE.min(mbox_resp.data_size as usize);
         let data = &mbox_resp.data[..data_size];
@@ -265,7 +265,7 @@ impl CertContext {
         MAX_CERT_CHUNK_SIZE
     }
 
-    pub async fn cert_chain_chunk(
+    pub fn cert_chain_chunk(
         &mut self,
         offset: usize,
         cert_chunk: &mut [u8],
@@ -282,7 +282,7 @@ impl CertContext {
 
         let mut mbox_resp = InvokeDpeResp::default();
         self.send_dpe_cmd(&mut Command::GetCertificateChain(&dpe_cmd), &mut mbox_resp)
-            .await?;
+            ?;
 
         let data_size = InvokeDpeResp::DATA_MAX_SIZE.min(mbox_resp.data_size as usize);
         let data = &mbox_resp.data[..data_size];
@@ -304,7 +304,7 @@ impl CertContext {
         Ok(cert_chain_resp_len)
     }
 
-    async fn get_ecc384_cert<R: Request<Resp = VarSizeDataResp> + Default>(
+    fn get_ecc384_cert<R: Request<Resp = VarSizeDataResp> + Default>(
         &mut self,
         cert: &mut [u8; MAX_ECC_CERT_SIZE],
     ) -> CaliptraApiResult<usize> {
@@ -313,7 +313,7 @@ impl CertContext {
         let req_bytes = req.as_mut_bytes();
         let resp_bytes = resp.as_mut_bytes();
         let cmd = R::ID.into();
-        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes)?;
 
         let resp = VarSizeDataResp::ref_from_bytes(resp_bytes)
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
@@ -324,7 +324,7 @@ impl CertContext {
         Ok(resp.data_size as usize)
     }
 
-    async fn get_attested_csr_inner<R: Request<Resp = AttestedCsrResp>>(
+    fn get_attested_csr_inner<R: Request<Resp = AttestedCsrResp>>(
         &mut self,
         req: &mut R,
         csr_data: &mut [u8],
@@ -334,7 +334,7 @@ impl CertContext {
         let resp_bytes = resp.as_mut_bytes();
         let cmd = R::ID.into();
 
-        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, cmd, req_bytes, resp_bytes)?;
 
         let resp = AttestedCsrResp::ref_from_bytes(resp_bytes)
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
@@ -350,7 +350,7 @@ impl CertContext {
         Ok(size)
     }
 
-    async fn send_dpe_cmd(
+    fn send_dpe_cmd(
         &mut self,
         dpe_cmd: &mut Command<'_>,
         mbox_resp: &mut InvokeDpeResp,
@@ -373,7 +373,7 @@ impl CertContext {
             mbox_req.as_mut_bytes(),
             mbox_resp.as_mut_bytes(),
         )
-        .await?;
+        ?;
 
         Ok(())
     }

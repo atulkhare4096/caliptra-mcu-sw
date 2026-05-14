@@ -24,7 +24,7 @@ use caliptra_mcu_libtock_platform::ErrorCode;
 const RESET_REASON_FW_HITLESS_UPD_RESET_MASK: u32 = 0x1;
 
 #[allow(dead_code)]
-pub async fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), ErrorCode> {
+pub fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), ErrorCode> {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     let reset_reason = get_reset_reason()?;
 
@@ -41,7 +41,7 @@ pub async fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), Error
             descriptors: &config::fw_update_consts::DESCRIPTOR.get()[..],
             fw_params: config::fw_update_consts::FIRMWARE_PARAMS.get(),
         };
-        let mut staging_memory = dummy_flash::ExternalFlash::new().await?;
+        let mut staging_memory = dummy_flash::ExternalFlash::new()?;
         let staging_memory: &'static dummy_flash::ExternalFlash =
             unsafe { core::mem::transmute(&mut staging_memory) };
         let mut updater = FirmwareUpdater::new(
@@ -50,7 +50,7 @@ pub async fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), Error
             dma_mapping,
             EXECUTOR.get().spawner(),
         );
-        updater.start().await?;
+        updater.start()?;
     }
 
     #[cfg(feature = "test-firmware-update-flash")]
@@ -59,7 +59,7 @@ pub async fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), Error
             descriptors: &config::fw_update_consts::DESCRIPTOR.get()[..],
             fw_params: config::fw_update_consts::FIRMWARE_PARAMS.get(),
         };
-        let mut staging_memory = flash_memory::ExternalFlash::new().await?;
+        let mut staging_memory = flash_memory::ExternalFlash::new()?;
         let staging_memory: &'static flash_memory::ExternalFlash =
             unsafe { core::mem::transmute(&mut staging_memory) };
         let mut updater = FirmwareUpdater::new(
@@ -68,7 +68,7 @@ pub async fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), Error
             dma_mapping,
             EXECUTOR.get().spawner(),
         );
-        updater.start().await?;
+        updater.start()?;
     }
 
     // Trigger MCU warm reset to boot into new firmware
@@ -89,7 +89,6 @@ fn get_reset_reason() -> Result<u32, ErrorCode> {
 mod external_memory {
     extern crate alloc;
     use alloc::boxed::Box;
-    use async_trait::async_trait;
     use caliptra_mcu_libapi_caliptra::firmware_update::StagingMemory;
     use caliptra_mcu_libsyscall_caliptra::dma::{
         DMAMapping, DMASource, DMATransaction, DMA as DMASyscall,
@@ -119,9 +118,8 @@ mod external_memory {
         }
     }
 
-    #[async_trait]
     impl StagingMemory for ExternalRAM {
-        async fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
+        fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
             let mut current_offset = offset;
             while current_offset < offset + data.len() {
                 let transfer_size = (offset + data.len() - current_offset).min(DMA_TRANSFER_SIZE);
@@ -131,14 +129,14 @@ mod external_memory {
                     source: DMASource::Address(source_address),
                     dest_addr: DEVICE_EXTERNAL_SRAM_BASE + current_offset as u64,
                 };
-                self.dma_syscall.xfer(&transaction).await?;
+                self.dma_syscall.xfer(&transaction)?;
                 current_offset += transfer_size;
             }
 
             Ok(())
         }
 
-        async fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
+        fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
             let dest_address = self
                 .dma_mapping
                 .mcu_sram_to_mcu_axi(data.as_mut_ptr() as u32)?;
@@ -147,10 +145,10 @@ mod external_memory {
                 source: DMASource::Address(DEVICE_EXTERNAL_SRAM_BASE + offset as u64),
                 dest_addr: dest_address,
             };
-            self.dma_syscall.xfer(&transaction).await
+            self.dma_syscall.xfer(&transaction)
         }
 
-        async fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode> {
+        fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode> {
             Ok(())
         }
 
@@ -171,7 +169,6 @@ mod external_memory {
 mod dummy_flash {
     extern crate alloc;
     use alloc::boxed::Box;
-    use async_trait::async_trait;
     use caliptra_mcu_config_fpga::flash::DRIVER_NUM_EMULATED_FLASH_CTRL;
     use caliptra_mcu_libapi_caliptra::firmware_update::StagingMemory;
     use caliptra_mcu_libsyscall_caliptra::flash::{FlashCapacity, SpiFlash as FlashSyscall};
@@ -183,24 +180,23 @@ mod dummy_flash {
     }
 
     impl ExternalFlash {
-        pub async fn new() -> Result<Self, ErrorCode> {
+        pub fn new() -> Result<Self, ErrorCode> {
             Ok(ExternalFlash {
                 flash_syscall: FlashSyscall::new(DRIVER_NUM_EMULATED_FLASH_CTRL as u32),
             })
         }
     }
 
-    #[async_trait]
     impl StagingMemory for ExternalFlash {
-        async fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
-            self.flash_syscall.write(offset, data.len(), data).await
+        fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
+            self.flash_syscall.write(offset, data.len(), data)
         }
 
-        async fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
-            self.flash_syscall.read(offset, data.len(), data).await
+        fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
+            self.flash_syscall.read(offset, data.len(), data)
         }
 
-        async fn image_valid(&self, _img_sz: usize) -> Result<(), ErrorCode> {
+        fn image_valid(&self, _img_sz: usize) -> Result<(), ErrorCode> {
             Ok(())
         }
 
@@ -223,7 +219,6 @@ mod dummy_flash {
 mod flash_memory {
     extern crate alloc;
     use alloc::boxed::Box;
-    use async_trait::async_trait;
     use caliptra_mcu_config::boot::{BootConfigAsync, PartitionId, PartitionStatus};
     use caliptra_mcu_config_emulator::flash::STAGING_PARTITION;
     use caliptra_mcu_libapi_caliptra::firmware_update::StagingMemory;
@@ -243,29 +238,28 @@ mod flash_memory {
     }
 
     impl ExternalFlash {
-        pub async fn new() -> Result<Self, ErrorCode> {
+        pub fn new() -> Result<Self, ErrorCode> {
             Ok(ExternalFlash {
                 flash_syscall: FlashSyscall::new(STAGING_PARTITION.driver_num),
             })
         }
     }
 
-    #[async_trait]
     impl StagingMemory for ExternalFlash {
-        async fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
-            self.flash_syscall.write(offset, data.len(), data).await
+        fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode> {
+            self.flash_syscall.write(offset, data.len(), data)
         }
 
-        async fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
-            self.flash_syscall.read(offset, data.len(), data).await
+        fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode> {
+            self.flash_syscall.read(offset, data.len(), data)
         }
 
-        async fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode> {
+        fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode> {
             // Copy image to the inactive partition
             let mut boot_config = FlashBootConfig::new();
             let inactive_partition_id = boot_config
                 .get_inactive_partition()
-                .await
+                
                 .map_err(|_| ErrorCode::Fail)?;
             let inactive_partition = boot_config
                 .get_partition_from_id(inactive_partition_id)
@@ -281,7 +275,7 @@ mod flash_memory {
             // Mark inactive partittion as invalid
             boot_config
                 .set_partition_status(inactive_partition_id, PartitionStatus::Invalid)
-                .await
+                
                 .map_err(|_| ErrorCode::Fail)?;
 
             // Copy the image from staging partition to inactive partition
@@ -293,17 +287,17 @@ mod flash_memory {
                 let chunk_size = (img_sz - bytes_copied).min(buffer.len());
                 self.flash_syscall
                     .read(bytes_copied, chunk_size, &mut buffer[..chunk_size])
-                    .await?;
+                    ?;
                 inactive_flash_syscall
                     .write(bytes_copied, chunk_size, &buffer[..chunk_size])
-                    .await?;
+                    ?;
                 bytes_copied += chunk_size;
             }
 
             // Mark inactive partition as valid
             boot_config
                 .set_partition_status(inactive_partition_id, PartitionStatus::Valid)
-                .await
+                
                 .map_err(|_| ErrorCode::Fail)?;
             Ok(())
         }

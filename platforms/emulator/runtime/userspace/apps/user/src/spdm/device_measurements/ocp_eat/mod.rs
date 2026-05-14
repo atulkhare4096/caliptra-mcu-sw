@@ -7,7 +7,6 @@ pub mod claims;
 pub use claims::init_target_env_claims;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::certificate::KEY_LABEL_SIZE;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::signed_eat::SignedEat;
@@ -45,9 +44,8 @@ impl OcpEatManifest {
     }
 }
 
-#[async_trait]
 impl SpdmMeasurementValue for OcpEatManifest {
-    async fn get_measurement_value(
+    fn get_measurement_value(
         &mut self,
         _index: u8,
         nonce: &[u8],
@@ -55,7 +53,7 @@ impl SpdmMeasurementValue for OcpEatManifest {
         measurement: &mut [u8],
     ) -> MeasurementsResult<usize> {
         let mut claims_buf = [0u8; 1024];
-        let payload_size = claims::generate_claims(&mut claims_buf, nonce).await?;
+        let payload_size = claims::generate_claims(&mut claims_buf, nonce)?;
 
         if payload_size > measurement.len() {
             return Err(MeasurementsError::BufferTooSmall);
@@ -66,7 +64,7 @@ impl SpdmMeasurementValue for OcpEatManifest {
 
         signed_eat
             .generate(&claims_buf[..payload_size], measurement)
-            .await
+            
             .map_err(MeasurementsError::CaliptraApi)
     }
 }

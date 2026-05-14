@@ -59,16 +59,16 @@ impl DeviceCertStore {
         self.cert_chain(slot).is_ok()
     }
 
-    pub async fn cert_chain_len(
+    pub fn cert_chain_len(
         &mut self,
         asym_algo: AsymAlgo,
         slot_id: u8,
     ) -> CertStoreResult<usize> {
         let cert_chain = self.cert_chain_mut(slot_id)?;
-        cert_chain.size(asym_algo).await
+        cert_chain.size(asym_algo)
     }
 
-    pub async fn get_cert_chain(
+    pub fn get_cert_chain(
         &mut self,
         slot_id: u8,
         asym_algo: AsymAlgo,
@@ -76,20 +76,20 @@ impl DeviceCertStore {
         cert_portion: &mut [u8],
     ) -> CertStoreResult<usize> {
         let cert_chain = self.cert_chain_mut(slot_id)?;
-        cert_chain.read(asym_algo, offset, cert_portion).await
+        cert_chain.read(asym_algo, offset, cert_portion)
     }
 
-    pub async fn root_cert_hash(
+    pub fn root_cert_hash(
         &self,
         slot_id: u8,
         asym_algo: AsymAlgo,
         cert_hash: &mut [u8; SHA384_HASH_SIZE],
     ) -> CertStoreResult<()> {
         let cert_chain = self.cert_chain(slot_id)?;
-        cert_chain.root_cert_hash(asym_algo, cert_hash).await
+        cert_chain.root_cert_hash(asym_algo, cert_hash)
     }
 
-    pub async fn sign_hash<'a>(
+    pub fn sign_hash<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
@@ -97,6 +97,6 @@ impl DeviceCertStore {
         signature: &'a mut [u8; ECC_P384_SIGNATURE_SIZE],
     ) -> CertStoreResult<()> {
         let cert_chain = self.cert_chain(slot_id)?;
-        cert_chain.sign(asym_algo, hash, signature).await
+        cert_chain.sign(asym_algo, hash, signature)
     }
 }

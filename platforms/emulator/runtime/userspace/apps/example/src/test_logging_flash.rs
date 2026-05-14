@@ -4,14 +4,14 @@ use caliptra_mcu_libsyscall_caliptra::logging::LoggingSyscall;
 use caliptra_mcu_romtime::println;
 use core::fmt::Write;
 
-pub async fn test_logging_flash_simple() {
+pub fn test_logging_flash_simple() {
     println!("test_logging_flash_simple started");
     let log: LoggingSyscall = LoggingSyscall::new();
 
     assert!(log.exists().is_ok(), "Logging driver doesn't exist");
     assert!(log.get_capacity().is_ok(), "Failed to get logging capacity");
-    assert!(log.seek_beginning().await.is_ok(), "Seek beginning failed");
-    assert!(log.clear().await.is_ok(), "Clear log failed");
+    assert!(log.seek_beginning().is_ok(), "Seek beginning failed");
+    assert!(log.clear().is_ok(), "Clear log failed");
 
     // Prepare a simple entry to append.
     let mut entry = [0u8; 64];
@@ -20,26 +20,26 @@ pub async fn test_logging_flash_simple() {
     }
 
     assert!(
-        log.append_entry(&entry).await.is_ok(),
+        log.append_entry(&entry).is_ok(),
         "Failed to append entry"
     );
 
     let mut buffer = [0u8; 256];
-    let read_result = log.read_entry(&mut buffer).await;
+    let read_result = log.read_entry(&mut buffer);
     assert!(read_result.is_ok(), "Failed to read back the entry");
     let len = read_result.unwrap();
     assert!(buffer[..len] == entry[..len], "Entry mismatch");
     println!("test_logging_flash_simple succeeded");
 }
 
-pub async fn test_logging_flash_various_entries() {
+pub fn test_logging_flash_various_entries() {
     println!("test_logging_flash_various_entries started");
 
     let log: LoggingSyscall = LoggingSyscall::new();
     assert!(log.exists().is_ok(), "Logging driver doesn't exist");
     assert!(log.get_capacity().is_ok(), "Failed to get logging capacity");
-    assert!(log.seek_beginning().await.is_ok(), "Seek beginning failed");
-    assert!(log.clear().await.is_ok(), "Clear log failed");
+    assert!(log.seek_beginning().is_ok(), "Seek beginning failed");
+    assert!(log.clear().is_ok(), "Clear log failed");
 
     let mut entry_buf_0 = [0u8; 8];
     let mut entry_buf_1 = [0u8; 32];
@@ -67,7 +67,7 @@ pub async fn test_logging_flash_various_entries() {
     ];
     for (i, entry) in entry_refs.iter().enumerate() {
         assert!(
-            log.append_entry(entry).await.is_ok(),
+            log.append_entry(entry).is_ok(),
             "Failed to append patterned entry {}",
             i
         );
@@ -82,7 +82,7 @@ pub async fn test_logging_flash_various_entries() {
     ];
     for (i, expected) in expected_refs.iter().enumerate() {
         buffer.fill(0);
-        let read_result = log.read_entry(&mut buffer).await;
+        let read_result = log.read_entry(&mut buffer);
         assert!(read_result.is_ok(), "Failed to read entry {}", i);
         let len = read_result.unwrap();
         assert!(
@@ -91,40 +91,40 @@ pub async fn test_logging_flash_various_entries() {
             i
         );
     }
-    assert!(log.sync().await.is_ok(), "Sync failed");
-    assert!(log.clear().await.is_ok(), "Clear failed");
+    assert!(log.sync().is_ok(), "Sync failed");
+    assert!(log.clear().is_ok(), "Clear failed");
 
     buffer.fill(0);
-    let read_after_clear = log.read_entry(&mut buffer).await;
+    let read_after_clear = log.read_entry(&mut buffer);
     assert!(read_after_clear.is_err(), "Log should be empty after clear");
 
     println!("test_logging_flash_various_entries succeeded");
 }
 
-pub async fn test_logging_flash_invalid_inputs() {
+pub fn test_logging_flash_invalid_inputs() {
     println!("test_logging_flash_invalid_inputs started");
 
     let log: LoggingSyscall = LoggingSyscall::new();
     assert!(log.exists().is_ok(), "Logging driver doesn't exist");
     assert!(log.get_capacity().is_ok(), "Failed to get logging capacity");
-    assert!(log.seek_beginning().await.is_ok(), "Seek beginning failed");
-    assert!(log.clear().await.is_ok(), "Clear log failed");
+    assert!(log.seek_beginning().is_ok(), "Seek beginning failed");
+    assert!(log.clear().is_ok(), "Clear log failed");
 
     let empty_entry: &[u8] = &[];
     assert!(
-        log.append_entry(empty_entry).await.is_err(),
+        log.append_entry(empty_entry).is_err(),
         "Should not append empty entry"
     );
 
     let oversized_entry = [0u8; 256];
     assert!(
-        log.append_entry(&oversized_entry).await.is_err(),
+        log.append_entry(&oversized_entry).is_err(),
         "Should not append oversized entry"
     );
 
     let mut zero_buf = [];
     assert!(
-        log.read_entry(&mut zero_buf).await.is_err(),
+        log.read_entry(&mut zero_buf).is_err(),
         "Should not read with zero-sized buffer"
     );
     println!("test_logging_flash_invalid_inputs succeeded");

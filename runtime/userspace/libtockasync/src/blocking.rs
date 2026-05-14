@@ -229,3 +229,34 @@ pub fn subscribe_and_wait<S: Syscalls>(
 
     Ok(wait_for_result::<S>(&result))
 }
+
+/// Single-threaded synchronous mutex for Tock userspace.
+///
+/// Provides a `.lock()` API that returns `&mut T` directly, matching the
+/// ergonomics of `embassy_sync::mutex::Mutex::lock().await` without requiring
+/// async or allocations. Safe to use in statics (implements `Sync` + `Send`).
+///
+/// # Safety
+/// Only correct in a single-threaded environment (no preemptive concurrency).
+pub struct SyncMutex<T> {
+    inner: core::cell::UnsafeCell<T>,
+}
+
+// Safety: single-threaded Tock userspace — no concurrent access possible
+unsafe impl<T> Sync for SyncMutex<T> {}
+unsafe impl<T> Send for SyncMutex<T> {}
+
+impl<T> SyncMutex<T> {
+    pub const fn new(val: T) -> Self {
+        Self {
+            inner: core::cell::UnsafeCell::new(val),
+        }
+    }
+
+    /// Acquire exclusive access. Returns `&mut T` directly (no guard needed).
+    pub fn lock(&self) -> &mut T {
+        // Safety: single-threaded environment — no other code can access
+        // this cell concurrently. Tock upcalls don't preempt user code.
+        unsafe { &mut *self.inner.get() }
+    }
+}

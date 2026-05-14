@@ -6,7 +6,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::evidence::pcr_quote::PcrQuote;
 use caliptra_mcu_spdm_lib::measurements::{
@@ -37,9 +36,8 @@ impl PcrQuoteManifest {
     }
 }
 
-#[async_trait]
 impl SpdmMeasurementValue for PcrQuoteManifest {
-    async fn get_measurement_value(
+    fn get_measurement_value(
         &mut self,
         _index: u8,
         nonce: &[u8],
@@ -52,7 +50,7 @@ impl SpdmMeasurementValue for PcrQuoteManifest {
             return Err(MeasurementsError::BufferTooSmall);
         }
         let copied_len = PcrQuote::pcr_quote(Some(nonce), measurement, with_pqc_sig)
-            .await
+            
             .map_err(MeasurementsError::CaliptraApi)?;
 
         Ok(copied_len)

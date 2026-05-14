@@ -12,7 +12,7 @@ pub use caliptra_api::mailbox::{CmKeyUsage, CMB_ECDH_EXCHANGE_DATA_MAX_SIZE};
 pub struct Import;
 
 impl Import {
-    pub async fn import(key_usage: CmKeyUsage, data: &[u8]) -> CaliptraApiResult<CmImportResp> {
+    pub fn import(key_usage: CmKeyUsage, data: &[u8]) -> CaliptraApiResult<CmImportResp> {
         let mailbox = Mailbox::new();
 
         let mut req = CmImportReq {
@@ -29,7 +29,7 @@ impl Import {
 
         let mut rsp = CmImportResp::default();
         let rsp_bytes = rsp.as_mut_bytes();
-        execute_mailbox_cmd(&mailbox, CmImportReq::ID.0, req.as_mut_bytes(), rsp_bytes).await?;
+        execute_mailbox_cmd(&mailbox, CmImportReq::ID.0, req.as_mut_bytes(), rsp_bytes)?;
         Ok(rsp)
     }
 }

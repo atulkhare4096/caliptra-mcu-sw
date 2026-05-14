@@ -3,7 +3,7 @@
 use caliptra_mcu_libsyscall_caliptra::mcu_mbox::{MbxCmdStatus, McuMbox, MCU_MBOX0_DRIVER_NUM};
 
 #[allow(dead_code)]
-pub async fn test_mcu_mbox_usermode_loopback() {
+pub fn test_mcu_mbox_usermode_loopback() {
     let mcu_mbox0: McuMbox = McuMbox::new(MCU_MBOX0_DRIVER_NUM);
     assert!(mcu_mbox0.exists(), "MCU mailbox 0 driver does not exist");
 
@@ -12,7 +12,7 @@ pub async fn test_mcu_mbox_usermode_loopback() {
         let on_listening_cb: Option<fn()> = None;
         let recv_result = mcu_mbox0
             .receive_command(&mut request_buffer, on_listening_cb)
-            .await;
+            ;
 
         assert!(
             recv_result.is_ok(),
@@ -27,7 +27,7 @@ pub async fn test_mcu_mbox_usermode_loopback() {
 
         // Echo the received payload back as the response
         let response_data = &request_buffer[..payload_len];
-        let send_result = mcu_mbox0.send_response(response_data).await;
+        let send_result = mcu_mbox0.send_response(response_data);
         assert!(
             send_result.is_ok(),
             "Failed to send response: {:?}",

@@ -15,7 +15,6 @@ use crate::vdm_handler::{
     VdmError, VdmProtocolHandler, VdmProtocolMatcher, VdmResponder, VdmResult,
 };
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 pub(crate) mod commands;
 pub mod driver;
@@ -70,9 +69,8 @@ impl VdmProtocolMatcher for TdispResponder<'_> {
     }
 }
 
-#[async_trait]
 impl VdmResponder for TdispResponder<'_> {
-    async fn handle_request(
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,
@@ -126,26 +124,26 @@ impl VdmResponder for TdispResponder<'_> {
                 tdisp_version::handle_get_tdisp_version(self, &req_hdr, rsp_buf)?
             }
             TdispCommand::GetTdispCapabilities => {
-                tdisp_capabilities::handle_get_tdisp_capabilities(self, req_buf, rsp_buf).await?
+                tdisp_capabilities::handle_get_tdisp_capabilities(self, req_buf, rsp_buf)?
             }
             TdispCommand::LockInterface => {
-                lock_interface::handle_lock_interface(self, &req_hdr, req_buf, rsp_buf).await?
+                lock_interface::handle_lock_interface(self, &req_hdr, req_buf, rsp_buf)?
             }
             TdispCommand::GetDeviceInterfaceReport => {
                 device_interface_report::handle_get_device_interface_report(
                     self, &req_hdr, req_buf, rsp_buf,
                 )
-                .await?
+                ?
             }
             TdispCommand::GetDeviceInterfaceState => {
                 device_interface_state::handle_get_device_interface_state(self, &req_hdr, rsp_buf)
-                    .await?
+                    ?
             }
             TdispCommand::StartInterfaceRequest => {
-                start_interface_rsp::handle_start_interface_request(self, &req_hdr, req_buf).await?
+                start_interface_rsp::handle_start_interface_request(self, &req_hdr, req_buf)?
             }
             TdispCommand::StopInterfaceRequest => {
-                stop_interface_rsp::handle_stop_interface_request(self, &req_hdr).await?
+                stop_interface_rsp::handle_stop_interface_request(self, &req_hdr)?
             }
             TdispCommand::BindP2PStreamRequest
             | TdispCommand::UnbindP2PStreamRequest

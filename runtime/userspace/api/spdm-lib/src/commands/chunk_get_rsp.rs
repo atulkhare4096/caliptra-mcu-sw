@@ -149,7 +149,7 @@ fn encode_chunk_response_hdr(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-async fn encode_chunk_data(
+fn encode_chunk_data(
     ctx: &mut SpdmContext<'_>,
     chunk_size: usize,
     rsp: &mut MessageBuf<'_>,
@@ -174,7 +174,7 @@ async fn encode_chunk_data(
                         offset,
                         chunk_buf,
                     )
-                    .await?
+                    ?
             }
             LargeResponse::Buffered => {
                 // Simple memcpy from the pre-serialized shared buffer
@@ -204,7 +204,7 @@ async fn encode_chunk_data(
     Ok(bytes_copied)
 }
 
-async fn generate_chunk_response<'a>(
+fn generate_chunk_response<'a>(
     ctx: &mut SpdmContext<'a>,
     handle: u8,
     chunk_seq_num: u16,
@@ -227,7 +227,7 @@ async fn generate_chunk_response<'a>(
     }
 
     // Encode chunk data first (as payload) to determine actual bytes copied
-    let actual_chunk_size = encode_chunk_data(ctx, chunk_size, rsp).await?;
+    let actual_chunk_size = encode_chunk_data(ctx, chunk_size, rsp)?;
 
     // Mark this chunk as sent with actual bytes transferred
     ctx.large_msg_ctx.next_chunk_sent(actual_chunk_size);
@@ -256,7 +256,7 @@ async fn generate_chunk_response<'a>(
     Ok(())
 }
 
-pub(crate) async fn handle_chunk_get<'a>(
+pub(crate) fn handle_chunk_get<'a>(
     ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
@@ -283,7 +283,7 @@ pub(crate) async fn handle_chunk_get<'a>(
 
     // Generate CHUNK_RESPONSE response
     ctx.prepare_response_buffer(req_payload)?;
-    generate_chunk_response(ctx, handle, chunk_seq_num, req_payload).await?;
+    generate_chunk_response(ctx, handle, chunk_seq_num, req_payload)?;
 
     Ok(())
 }

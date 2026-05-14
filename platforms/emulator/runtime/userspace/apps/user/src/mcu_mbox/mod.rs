@@ -25,9 +25,8 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[allow(unused)]
 use embassy_sync::signal::Signal;
 
-#[embassy_executor::task]
-pub async fn mcu_mbox_task() {
-    match start_mcu_mbox_service().await {
+pub fn mcu_mbox_task() {
+    match start_mcu_mbox_service() {
         Ok(_) => {}
         Err(_) => System::exit(1),
     }
@@ -35,7 +34,7 @@ pub async fn mcu_mbox_task() {
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-async fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
+fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     writeln!(console_writer, "Starting MCU_MBOX task...").unwrap();
 
@@ -63,7 +62,7 @@ async fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
         )
         .unwrap();
 
-        if let Err(e) = mcu_mbox_service.start().await {
+        if let Err(e) = mcu_mbox_service.start() {
             writeln!(
                 console_writer,
                 "USER_APP: Error starting MCU_MBOX service: {:?}",
@@ -72,7 +71,7 @@ async fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
             .unwrap();
         }
         let suspend_signal: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-        suspend_signal.wait().await;
+        suspend_signal.wait();
     }
 
     Ok(())

@@ -8,7 +8,7 @@ use caliptra_mcu_romtime::println;
 use core::fmt::Write;
 
 #[allow(unused)]
-pub(crate) async fn test_mem_reg_read_write() {
+pub(crate) fn test_mem_reg_read_write() {
     println!("Starting test_mem_reg_read_write");
     let mem_reg: MboxSram<DefaultSyscalls> = MboxSram::new(DRIVER_NUM_MCU_MBOX1_SRAM);
 
@@ -20,10 +20,10 @@ pub(crate) async fn test_mem_reg_read_write() {
         }
         buf
     };
-    mem_reg.write(0, &write_buffer).await.unwrap();
+    mem_reg.write(0, &write_buffer).unwrap();
 
     let mut read_buffer = [0u8; 64];
-    mem_reg.read(0, &mut read_buffer).await.unwrap();
+    mem_reg.read(0, &mut read_buffer).unwrap();
     assert_eq!(write_buffer, read_buffer);
     mem_reg.release_lock().unwrap();
 }

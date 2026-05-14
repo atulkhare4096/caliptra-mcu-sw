@@ -6,11 +6,6 @@
 
 use core::fmt::Write;
 
-use caliptra_mcu_libtockasync::TockExecutor;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::{lazy_lock::LazyLock, signal::Signal};
 mod caliptra_cmd_handler;
 #[cfg(any(
     feature = "test-firmware-update-streaming",
@@ -45,7 +40,8 @@ fn print_to_console(buf: &str) {
     }
 }
 
-pub static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
+pub static EXECUTOR: embassy_sync::lazy_lock::LazyLock<caliptra_mcu_libtockasync::TockExecutor> =
+    embassy_sync::lazy_lock::LazyLock::new(caliptra_mcu_libtockasync::TockExecutor::new);
 
 #[cfg(not(target_arch = "riscv32"))]
 pub(crate) fn kernel() -> caliptra_mcu_libtock_unittest::fake::Kernel {
@@ -62,60 +58,38 @@ fn main() {
         #[allow(clippy::empty_loop)]
         loop {}
     }
-    // build a fake kernel so that the app will at least start without Tock
     let _kernel = kernel();
-    // call the main function
-    caliptra_mcu_libtockasync::start_async(start());
+    start();
 }
 
-#[embassy_executor::task]
-async fn start() {
+fn start() {
     unsafe {
         #[allow(static_mut_refs)]
         caliptra_mcu_romtime::set_printer(&mut EMULATOR_WRITER);
     }
-    async_main().await;
+    async_main();
 }
 
-pub(crate) async fn async_main() {
-    // TODO: Debug spawning the SPDM task causes a hardfault in FPGA when firmware update is enabled
-    // for now, disable the SPDM task if either FW update test is enabled
+pub(crate) fn async_main() {
+    // Run tasks directly in sync mode.
+    // Note: only the first blocking task will actually run in a single-threaded model.
+
     #[cfg(not(any(
         feature = "test-firmware-update-streaming",
         feature = "test-firmware-update-flash"
     )))]
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(spdm::spdm_task(EXECUTOR.get().spawner()))
-        .unwrap();
+    spdm::spdm_task();
 
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(image_loader::image_loading_task())
-        .unwrap();
-
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(mcu_mbox::mcu_mbox_task())
-        .unwrap();
+    // These would run if spdm_task returns (normally it doesn't):
+    image_loader::image_loading_task();
+    mcu_mbox::mcu_mbox_task();
 
     #[cfg(feature = "test-mcu-mbox-fips-periodic")]
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task())
-        .unwrap();
+    caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task();
 
     #[cfg(any(
         feature = "test-mctp-vdm-cmds",
         feature = "test-caliptra-util-host-mctp-vdm-validator"
     ))]
-    EXECUTOR.get().spawner().spawn(vdm::vdm_task()).unwrap();
-
-    loop {
-        EXECUTOR.get().poll();
-    }
+    vdm::vdm_task();
 }

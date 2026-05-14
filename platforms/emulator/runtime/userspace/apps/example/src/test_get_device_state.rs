@@ -7,18 +7,18 @@ use caliptra_mcu_romtime::{println, test_exit};
 use core::fmt::Write;
 
 #[allow(unused)]
-pub(crate) async fn test_get_pcr_quote() {
+pub(crate) fn test_get_pcr_quote() {
     println!("==Starting PCR quote test==");
-    test_pcr_quote_with_pqc_signature().await;
-    test_pcr_quote_with_ecc_signature().await;
+    test_pcr_quote_with_pqc_signature();
+    test_pcr_quote_with_ecc_signature();
     println!("==PCR Quote test success==");
 }
 
-async fn test_pcr_quote_with_pqc_signature() {
+fn test_pcr_quote_with_pqc_signature() {
     println!("Starting PCR quote with PQC signature test");
     let mut pcr_quote = [0u8; PCR_QUOTE_BUFFER_SIZE];
 
-    match PcrQuote::pcr_quote(None, &mut pcr_quote, true).await {
+    match PcrQuote::pcr_quote(None, &mut pcr_quote, true) {
         Ok(copy_len) if copy_len > 0 => {
             println!(
                 "PCR quote with PQC Signature[{}]: {:x?} ",
@@ -39,11 +39,11 @@ async fn test_pcr_quote_with_pqc_signature() {
     println!("PCR Quote with PQC signature test success");
 }
 
-async fn test_pcr_quote_with_ecc_signature() {
+fn test_pcr_quote_with_ecc_signature() {
     println!("Starting PCR quote with ECC signature test");
     let mut pcr_quote = [0u8; PCR_QUOTE_BUFFER_SIZE];
 
-    match PcrQuote::pcr_quote(None, &mut pcr_quote, false).await {
+    match PcrQuote::pcr_quote(None, &mut pcr_quote, false) {
         Ok(copy_len) if copy_len > 0 => {
             println!(
                 "PCR quote with ECC Signature[{}]: {:x?}",
@@ -64,9 +64,9 @@ async fn test_pcr_quote_with_ecc_signature() {
     println!("PCR Quote ECC signature test success");
 }
 
-pub async fn test_get_pcrs() {
+pub fn test_get_pcrs() {
     println!("==Starting get PCRs test==");
-    let pcrs = match PcrQuote::get_pcrs().await {
+    let pcrs = match PcrQuote::get_pcrs() {
         Ok(pcrs) => pcrs,
         Err(err) => {
             println!("Failed to get the PCRs. {:?}", err);
@@ -79,9 +79,9 @@ pub async fn test_get_pcrs() {
     println!("==Get PCRs test success==");
 }
 
-pub async fn test_get_fw_info() {
+pub fn test_get_fw_info() {
     println!("==Starting get FW_INFO test==");
-    let fw_info = match DeviceState::fw_info().await {
+    let fw_info = match DeviceState::fw_info() {
         Ok(fw_info) => fw_info,
         Err(err) => {
             println!("Failed to get the FW_INFO. {:?}", err);
@@ -93,11 +93,11 @@ pub async fn test_get_fw_info() {
     println!("==Get FW_INFO test success==");
 }
 
-pub async fn test_get_image_info() {
+pub fn test_get_image_info() {
     println!("==Starting get IMAGE_INFO test==");
     // Example: Get image info for MCU firmware (fw_id = 0x02)
     let mcu_fw_id: u32 = 0x02;
-    let mcu_image_info = match DeviceState::image_info(mcu_fw_id).await {
+    let mcu_image_info = match DeviceState::image_info(mcu_fw_id) {
         Ok(image_info) => image_info,
         Err(err) => {
             println!("Failed to get image info for id {}: {:?}", mcu_fw_id, err);
@@ -112,10 +112,10 @@ pub async fn test_get_image_info() {
     println!("==Get IMAGE_INFO test success==");
 }
 
-pub async fn test_get_fw_version() {
+pub fn test_get_fw_version() {
     println!("==Starting get FW_VERSION test==");
     let (received_hw_rev, received_rom_version, received_fmc_version, received_rt_version) =
-        match DeviceState::fw_version().await {
+        match DeviceState::fw_version() {
             Ok(version) => version,
             Err(err) => {
                 println!("Failed to get the HW_VERSION. {:?}", err);

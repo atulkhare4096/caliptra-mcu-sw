@@ -45,13 +45,13 @@ impl MctpVdmTransport {
 
     /// Receive a VDM request.
     /// Returns the length of the received request.
-    pub async fn receive_request(&mut self, req: &mut [u8]) -> Result<usize, TransportError> {
+    pub fn receive_request(&mut self, req: &mut [u8]) -> Result<usize, TransportError> {
         // Reset msg buffer
         req.fill(0);
         let (req_len, msg_info) = self
             .mctp
             .receive_request(req)
-            .await
+            
             .map_err(|_| TransportError::ReceiveError)?;
 
         if req_len == 0 {
@@ -70,7 +70,7 @@ impl MctpVdmTransport {
     }
 
     /// Send a VDM response.
-    pub async fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
+    pub fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
         // Ensure the response buffer is large enough to contain the MCTP common header.
         if resp.is_empty() {
             return Err(TransportError::BufferTooSmall);
@@ -84,7 +84,7 @@ impl MctpVdmTransport {
         if let Some(msg_info) = self.cur_resp_ctx.clone() {
             self.mctp
                 .send_response(resp, msg_info)
-                .await
+                
                 .map_err(|_| TransportError::SendError)?;
         } else {
             return Err(TransportError::NoRequestInFlight);

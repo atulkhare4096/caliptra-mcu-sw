@@ -2,7 +2,6 @@
 
 extern crate alloc;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -44,7 +43,6 @@ pub enum ComponentOperation {
 /// including retrieving device identifiers, firmware parameters, and transfer sizes. It also
 /// provides methods for handling firmware components, managing firmware data downloads, verifying
 /// and applying firmware, activating new firmware, and obtaining the current timestamp.
-#[async_trait(?Send)]
 pub trait FdOps {
     /// Asynchronously retrieves device identifiers.
     ///
@@ -85,7 +83,7 @@ pub trait FdOps {
     ///
     /// * `Result<usize, FdOpsError>` - On success, returns the transfer size in bytes.
     ///   On failure, returns an `FdOpsError`.
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError>;
+    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError>;
 
     /// Handles firmware component operations such as passing or updating components.
     ///
@@ -116,7 +114,7 @@ pub trait FdOps {
     ///
     /// * `Result<(usize, usize), FdOpsError>` - On success, returns a tuple containing the offset and length in bytes.
     ///   On failure, returns an `FdOpsError`.
-    async fn query_download_offset_and_length(
+    fn query_download_offset_and_length(
         &self,
         component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError>;
@@ -133,7 +131,7 @@ pub trait FdOps {
     ///
     /// * `Result<TransferResult, FdOpsError>` - On success, returns a `TransferResult` indicating the outcome of the operation.
     ///   On failure, returns an `FdOpsError`.
-    async fn download_fw_data(
+    fn download_fw_data(
         &self,
         offset: usize,
         data: &[u8],
@@ -178,7 +176,7 @@ pub trait FdOps {
     ///
     /// * `Result<VerifyResult, FdOpsError>` - On success, returns a `VerifyResult` indicating the outcome of the verification.
     /// *   On failure, returns an `FdOpsError`.
-    async fn verify(
+    fn verify(
         &self,
         component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -195,7 +193,7 @@ pub trait FdOps {
     ///
     /// * `Result<ApplyResult, FdOpsError>` - On success, returns an `ApplyResult` indicating the outcome of the application.
     /// *   On failure, returns an `FdOpsError`.
-    async fn apply(
+    fn apply(
         &self,
         component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -243,7 +241,7 @@ pub trait FdOps {
     ///     - `NonFunctioningComponentIndication`: Indicates whether components are functioning or not.
     ///     - `NonFunctioningComponentBitmap`: A bitmap representing non-functioning components.
     ///   On failure, returns an `FdOpsError`.
-    async fn get_non_functional_component_info(
+    fn get_non_functional_component_info(
         &self,
     ) -> Result<
         (

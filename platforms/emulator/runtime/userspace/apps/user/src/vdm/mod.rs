@@ -21,9 +21,8 @@ use embassy_sync::signal::Signal;
 ))]
 use static_cell::StaticCell;
 
-#[embassy_executor::task]
-pub async fn vdm_task() {
-    match start_vdm_service().await {
+pub fn vdm_task() {
+    match start_vdm_service() {
         Ok(_) => {}
         Err(_) => System::exit(1),
     }
@@ -31,7 +30,7 @@ pub async fn vdm_task() {
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-async fn start_vdm_service() -> Result<(), ErrorCode> {
+fn start_vdm_service() -> Result<(), ErrorCode> {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     writeln!(console_writer, "Starting MCTP VDM task...").unwrap();
 
@@ -88,7 +87,7 @@ async fn start_vdm_service() -> Result<(), ErrorCode> {
             .unwrap();
         }
         let suspend_signal: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-        suspend_signal.wait().await;
+        suspend_signal.wait();
     }
 
     Ok(())

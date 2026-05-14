@@ -69,7 +69,7 @@ impl HashContext {
     ///
     /// # Returns
     /// A `CaliptraApiResult` indicating success or failure.
-    pub async fn hash_all(
+    pub fn hash_all(
         hash_algo: HashAlgoType,
         data: &[u8],
         hash: &mut [u8],
@@ -78,15 +78,15 @@ impl HashContext {
         if hash.len() < hash_algo.hash_size() {
             Err(CaliptraApiError::InvalidArgument("Hash buffer too small"))?;
         }
-        ctx.init(hash_algo, Some(data)).await?;
-        ctx.finalize(hash).await
+        ctx.init(hash_algo, Some(data))?;
+        ctx.finalize(hash)
     }
 
     pub fn hash_algo(&self) -> Option<HashAlgoType> {
         self.algo
     }
 
-    pub async fn init(
+    pub fn init(
         &mut self,
         hash_algo: HashAlgoType,
         data: Option<&[u8]>,
@@ -114,7 +114,7 @@ impl HashContext {
         let req_bytes = init_req.as_mut_bytes();
         let init_rsp_bytes = &mut [0u8; size_of::<CmShaInitResp>()];
 
-        execute_mailbox_cmd(&self.mbox, CmShaInitReq::ID.0, req_bytes, init_rsp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, CmShaInitReq::ID.0, req_bytes, init_rsp_bytes)?;
 
         let init_rsp = CmShaInitResp::ref_from_bytes(init_rsp_bytes)
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
@@ -124,7 +124,7 @@ impl HashContext {
         Ok(())
     }
 
-    pub async fn update(&mut self, data: &[u8]) -> CaliptraApiResult<()> {
+    pub fn update(&mut self, data: &[u8]) -> CaliptraApiResult<()> {
         let mut data_offset = 0;
 
         while data_offset < data.len() {
@@ -153,7 +153,7 @@ impl HashContext {
                 req_bytes,
                 update_rsp_bytes,
             )
-            .await?;
+            ?;
 
             let update_rsp = CmShaInitResp::ref_from_bytes(update_rsp_bytes)
                 .map_err(|_| CaliptraApiError::InvalidResponse)?;
@@ -165,7 +165,7 @@ impl HashContext {
         Ok(())
     }
 
-    pub async fn finalize(&mut self, hash: &mut [u8]) -> CaliptraApiResult<()> {
+    pub fn finalize(&mut self, hash: &mut [u8]) -> CaliptraApiResult<()> {
         let ctx = self.ctx.ok_or(CaliptraApiError::InvalidOperation(
             "Context not initialized",
         ))?;
@@ -192,7 +192,7 @@ impl HashContext {
         let req_bytes = final_req.as_mut_bytes();
         let final_rsp_bytes = &mut [0u8; size_of::<CmShaFinalResp>()];
 
-        execute_mailbox_cmd(&self.mbox, CmShaFinalReq::ID.0, req_bytes, final_rsp_bytes).await?;
+        execute_mailbox_cmd(&self.mbox, CmShaFinalReq::ID.0, req_bytes, final_rsp_bytes)?;
 
         let final_rsp = CmShaFinalResp::ref_from_bytes(final_rsp_bytes)
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
