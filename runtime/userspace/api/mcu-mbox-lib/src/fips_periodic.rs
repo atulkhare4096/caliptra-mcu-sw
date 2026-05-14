@@ -190,9 +190,10 @@ pub fn fips_periodic_task() {
             sleep_ms(FIPS_PERIODIC_INTERVAL_MS);
         } else {
             // Wait for enable signal (poll + yield)
-            while !STATE_CHANGED.swap(false, core::sync::atomic::Ordering::SeqCst) {
+            while !STATE_CHANGED.load(core::sync::atomic::Ordering::SeqCst) {
                 DefaultSyscalls::yield_wait();
             }
+            STATE_CHANGED.store(false, core::sync::atomic::Ordering::SeqCst);
         }
     }
 }

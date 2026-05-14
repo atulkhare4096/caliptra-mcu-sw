@@ -38,19 +38,12 @@ use caliptra_mcu_libtock_platform::ErrorCode;
 #[allow(unused)]
 use caliptra_mcu_pldm_lib::daemon::PldmService;
 use core::fmt::Write;
-
-#[allow(unused)]
-use crate::EXECUTOR;
 #[allow(unused)]
 use caliptra_mcu_libapi_caliptra::image_loading::{
     dma_transfer::DmaTransfer, FlashImageLoader, ImageLoader, PldmFirmwareDeviceParams,
     PldmImageLoader,
 };
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::{lazy_lock::LazyLock, signal::Signal};
 #[allow(unused)]
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -126,7 +119,7 @@ fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), ErrorCode
             fw_params: config::streaming_boot_consts::STREAMING_BOOT_FIRMWARE_PARAMS.get(),
         };
         let pldm_image_loader =
-            PldmImageLoader::new(&fw_params, EXECUTOR.get().spawner(), dma_mapping);
+            PldmImageLoader::new(&fw_params, dma_mapping);
         pldm_image_loader
             .load_and_authorize(config::streaming_boot_consts::IMAGE_ID1)
             ?;
@@ -217,7 +210,7 @@ fn image_loading<D: DMAMapping>(dma_mapping: &'static D) -> Result<(), ErrorCode
     ))]
     {
         let fdops = pldm_fdops_mock::FdOpsObject::new();
-        let mut pldm_service = PldmService::init(&fdops, EXECUTOR.get().spawner());
+        let mut pldm_service = PldmService::init(&fdops);
         writeln!(
             console_writer,
             "PLDM_APP: Starting PLDM service for testing..."

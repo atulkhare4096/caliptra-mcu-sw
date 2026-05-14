@@ -17,9 +17,8 @@ use caliptra_mcu_pldm_common::protocol::firmware_update::{
 use caliptra_mcu_pldm_common::util::fw_component::FirmwareComponent;
 use caliptra_mcu_pldm_lib::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use core::cell::RefCell;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_sync::lazy_lock::LazyLock;
-use embassy_sync::signal::Signal;
 
 const FD_DESCRIPTORS_COUNT: usize = 1;
 const FD_FW_COMPONENTS_COUNT: usize = 1;
@@ -61,7 +60,7 @@ static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
     )
 });
 
-static PLDM_DONE_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static PLDM_DONE: AtomicBool = AtomicBool::new(false);
 
 // This is the maximum time in seconds that UA will wait for self-activation. It is a test value for development.
 static TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS: u16 = 20;
@@ -95,7 +94,11 @@ impl FdOpsObject {
         }
     }
     pub fn wait_for_pldm_done() {
-        PLDM_DONE_SIGNAL.wait();
+        use caliptra_mcu_libtock_platform::Syscalls;
+        use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
+        while !PLDM_DONE.load(Ordering::SeqCst) {
+            DefaultSyscalls::yield_wait();
+        }
     }
 }
 
@@ -247,7 +250,7 @@ impl FdOps for FdOpsObject {
         if self_contained_activation == 1 {
             *estimated_time = TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS;
         }
-        PLDM_DONE_SIGNAL.signal(());
+        PLDM_DONE.store(true, Ordering::SeqCst);
         Ok(0) // PLDM completion code for success
     }
 

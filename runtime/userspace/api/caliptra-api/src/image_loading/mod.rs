@@ -19,7 +19,6 @@ use caliptra_mcu_libsyscall_caliptra::mailbox::{MailboxError, PayloadStream};
 use caliptra_mcu_libsyscall_caliptra::{dma::AXIAddr, mailbox::Mailbox};
 use caliptra_mcu_libtock_platform::ErrorCode;
 
-use caliptra_mcu_libtockasync::TockExecutor;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
@@ -27,11 +26,6 @@ use caliptra_mcu_pldm_lib::daemon::PldmService;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub const IMAGE_AUTHORIZED: u32 = 0xDEADC0DE;
-
-pub struct PldmInstance<'a> {
-    pub pldm_service: Option<PldmService<'a>>,
-    pub executor: TockExecutor,
-}
 
 pub trait ImageLoader {
     /// Loads the specified image to a storage mapped to the AXI bus memory map.
@@ -173,14 +167,13 @@ impl<D: DMAMapping + 'static> ImageLoader for PldmImageLoader<'_, D> {
         )?;
 
         let result: Result<(), ErrorCode> = {
-            pldm_client::initialize_pldm(
+            let mut service = pldm_client::initialize_pldm(
                 self.params.descriptors,
                 self.params.fw_params,
                 self.dma_mapping,
-            )
-            ?;
-            let (offset, size) = pldm_client::pldm_download_toc(image_info.component_id)?;
-            pldm_client::pldm_download_image(load_address, offset, size)?;
+            )?;
+            let (offset, size) = pldm_client::pldm_download_toc(&mut service, image_info.component_id)?;
+            pldm_client::pldm_download_image(&mut service, load_address, offset, size)?;
             authorize_image(&self.mailbox, image_id, size)
         };
         if result.is_err() {

@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-use super::pldm_client::{FW_UPDATE_TASK_YIELD, PLDM_DAEMON_TASK_YIELD};
 use super::pldm_context::{State, DOWNLOAD_CTX, PLDM_STATE};
 use crate::MAX_PLDM_TRANSFER_SIZE;
 use alloc::boxed::Box;
@@ -183,16 +182,11 @@ impl FdOps for UpdateFdOps {
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<VerifyResult, FdOpsError> {
-        // Transition to Verify state
+        // Transition to Verify state — the caller's run_until will see this
         PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             *state = State::Verifying;
         });
-        // Pass control to firmware update task
-        FW_UPDATE_TASK_YIELD.signal(());
-
-        // Wait for the firmware update task to complete verification
-        PLDM_DAEMON_TASK_YIELD.wait();
 
         *progress_percent = ProgressPercent::new(100).unwrap();
         let verify_result = DOWNLOAD_CTX.lock(|ctx| ctx.borrow().verify_result);
@@ -204,16 +198,11 @@ impl FdOps for UpdateFdOps {
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError> {
-        // Transition to Verify state
+        // Transition to Apply state — the caller's run_until will see this
         PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             *state = State::Apply;
         });
-        // Pass control to firmware update task
-        FW_UPDATE_TASK_YIELD.signal(());
-
-        // Wait for the firmware update task to complete verification
-        PLDM_DAEMON_TASK_YIELD.wait();
 
         *progress_percent = ProgressPercent::new(100).unwrap();
         let apply_result = DOWNLOAD_CTX.lock(|ctx| ctx.borrow().apply_result);
@@ -235,7 +224,6 @@ impl FdOps for UpdateFdOps {
             let mut state = state.borrow_mut();
             *state = State::Activate;
         });
-        FW_UPDATE_TASK_YIELD.signal(());
         Ok(0) // PLDM completion code for success
     }
 }

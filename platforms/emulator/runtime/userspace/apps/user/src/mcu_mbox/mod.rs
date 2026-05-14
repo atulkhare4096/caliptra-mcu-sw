@@ -19,11 +19,8 @@ use caliptra_mcu_libsyscall_caliptra::system::System;
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_console::Console;
 use caliptra_mcu_libtock_platform::ErrorCode;
+use caliptra_mcu_libtock_platform::Syscalls;
 use core::fmt::Write;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::signal::Signal;
 
 pub fn mcu_mbox_task() {
     match start_mcu_mbox_service() {
@@ -54,7 +51,6 @@ fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
             &handler,
             &mut cmd_authorizer,
             &mut transport,
-            crate::EXECUTOR.get().spawner(),
         );
         writeln!(
             console_writer,
@@ -70,8 +66,8 @@ fn start_mcu_mbox_service() -> Result<(), ErrorCode> {
             )
             .unwrap();
         }
-        let suspend_signal: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-        suspend_signal.wait();
+        // Service blocks in start(); if it returns, suspend here
+        loop { DefaultSyscalls::yield_wait(); }
     }
 
     Ok(())

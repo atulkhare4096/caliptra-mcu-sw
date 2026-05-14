@@ -40,9 +40,6 @@ fn print_to_console(buf: &str) {
     }
 }
 
-pub static EXECUTOR: embassy_sync::lazy_lock::LazyLock<caliptra_mcu_libtockasync::TockExecutor> =
-    embassy_sync::lazy_lock::LazyLock::new(caliptra_mcu_libtockasync::TockExecutor::new);
-
 #[cfg(not(target_arch = "riscv32"))]
 pub(crate) fn kernel() -> caliptra_mcu_libtock_unittest::fake::Kernel {
     use caliptra_mcu_libtock_unittest::fake;

@@ -9,12 +9,8 @@ mod cmd_handler_mock;
 use caliptra_mcu_libsyscall_caliptra::system::System;
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_console::Console;
-use caliptra_mcu_libtock_platform::ErrorCode;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
 use core::fmt::Write;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::signal::Signal;
 #[cfg(any(
     feature = "test-mctp-vdm-cmds",
     feature = "test-caliptra-util-host-mctp-vdm-validator"
@@ -76,7 +72,6 @@ fn start_vdm_service() -> Result<(), ErrorCode> {
         .unwrap();
 
         if let Err(e) = caliptra_mcu_mctp_vdm_lib::daemon::spawn_vdm_responder(
-            crate::EXECUTOR.get().spawner(),
             cmd_interface,
         ) {
             writeln!(
@@ -86,8 +81,8 @@ fn start_vdm_service() -> Result<(), ErrorCode> {
             )
             .unwrap();
         }
-        let suspend_signal: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-        suspend_signal.wait();
+        // Service blocks in spawn_vdm_responder; if it returns, suspend here
+        loop { DefaultSyscalls::yield_wait(); }
     }
 
     Ok(())

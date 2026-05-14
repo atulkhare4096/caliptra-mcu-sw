@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-use super::pldm_client::{IMAGE_LOADING_TASK_YIELD, PLDM_TASK_YIELD};
 use super::pldm_context::{State, DOWNLOAD_CTX, PLDM_STATE};
 use crate::MAX_PLDM_TRANSFER_SIZE;
 use alloc::boxed::Box;
@@ -143,21 +142,14 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         &self,
         _component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
-        let should_yield = PLDM_STATE.lock(|state| {
+        // State transitions are read by the caller's run_until loop;
+        // no signal/wait needed.
+        PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             if *state == State::Initializing {
                 *state = State::Initialized;
-                return true;
-            } else if *state == State::HeaderDownloadComplete || *state == State::ImageDownloadReady
-            {
-                return true;
             }
-            false
         });
-        if should_yield {
-            IMAGE_LOADING_TASK_YIELD.signal(());
-            PLDM_TASK_YIELD.wait();
-        }
 
         let (offset, request_length) = DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
@@ -184,33 +176,23 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
     ) -> Result<TransferResult, FdOpsError> {
         self.copy_data_to_buffer(offset, data)?;
         // update self.download_ctx
-        let should_yield = DOWNLOAD_CTX.lock(|ctx| {
+        DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
             if ctx.total_downloaded >= ctx.total_length {
                 PLDM_STATE.lock(|state| {
                     let mut state = state.borrow_mut();
                     if *state == State::DownloadingHeader {
                         *state = State::HeaderDownloadComplete;
-                        return false;
                     } else if *state == State::DownloadingToc {
                         *state = State::TocDownloadComplete;
-                        return true;
                     } else if *state == State::DownloadingImage {
                         *state = State::ImageDownloadComplete;
-                        return true;
                     }
-                    false
-                })
+                });
             } else {
                 ctx.current_offset += data.len();
-                false
             }
         });
-
-        if should_yield {
-            IMAGE_LOADING_TASK_YIELD.signal(());
-            PLDM_TASK_YIELD.wait();
-        }
 
         Ok(TransferResult::TransferSuccess)
     }

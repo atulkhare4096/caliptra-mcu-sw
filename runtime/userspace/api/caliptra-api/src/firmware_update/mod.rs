@@ -27,12 +27,10 @@ use caliptra_mcu_libsyscall_caliptra::dma::{
 use caliptra_mcu_libsyscall_caliptra::mailbox::Mailbox;
 use caliptra_mcu_libsyscall_caliptra::mailbox::{MailboxError, PayloadStream};
 use caliptra_mcu_libtock_platform::ErrorCode;
-use caliptra_mcu_libtockasync::TockExecutor;
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
-use caliptra_mcu_pldm_lib::daemon::PldmService;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
@@ -79,14 +77,13 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
 
     pub fn start(&mut self) -> Result<(), ErrorCode> {
         // Download firmware image to staging memory
-        pldm_client::initialize_pldm(
+        let mut service = pldm_client::initialize_pldm(
             self.params.descriptors,
             self.params.fw_params,
             self.staging_memory,
-        )
-        ?;
+        )?;
 
-        pldm_client::pldm_wait(State::Verifying)?;
+        pldm_client::pldm_wait(&mut service, State::Verifying)?;
 
         // Download is complete, verify the image
         let flash_header = self.verify();
@@ -97,14 +94,14 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
         let flash_header = flash_header.unwrap();
         pldm_client::pldm_set_verification_result(VerifyResult::VerifySuccess);
-        pldm_client::pldm_wait(State::Apply)?;
+        pldm_client::pldm_wait(&mut service, State::Apply)?;
 
         // Mark image as valid in staging memory
         let img_len = pldm_total_component_size();
         self.staging_memory.image_valid(img_len)?;
 
         pldm_client::pldm_set_apply_result(ApplyResult::ApplySuccess);
-        pldm_client::pldm_wait(State::Activate)?;
+        pldm_client::pldm_wait(&mut service, State::Activate)?;
 
         // Update Caliptra
         let result = self.update_caliptra(&flash_header);
@@ -642,11 +639,6 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
 
         Ok(())
     }
-}
-
-pub struct PldmInstance<'a> {
-    pub pldm_service: Option<PldmService<'a>>,
-    pub executor: TockExecutor,
 }
 
 pub trait StagingMemory: core::fmt::Debug + Send + Sync {

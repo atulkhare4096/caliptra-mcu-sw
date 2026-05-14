@@ -87,6 +87,39 @@ impl<'a> PldmService<'a> {
         Ok(())
     }
 
+    /// Start the service and process messages until `done` returns true.
+    ///
+    /// Unlike `start()`, this returns control to the caller once the condition
+    /// is met. The service remains in the running state so it can be resumed
+    /// with another call to `run_until`.
+    pub fn run_until<F: Fn() -> bool>(&mut self, done: F) -> Result<(), PldmServiceError> {
+        if !self.running.load(Ordering::SeqCst) {
+            self.running.store(true, Ordering::SeqCst);
+        }
+
+        let cmd_interface: &'static CmdInterface<'static> =
+            unsafe { core::mem::transmute(&self.cmd_interface) };
+
+        let mut transport = MctpTransport::new(driver_num::MCTP_PLDM);
+        let mut msg_buffer = [0; MAX_MCTP_PLDM_MSG_SIZE];
+        let mut console_writer = Console::<DefaultSyscalls>::writer();
+
+        while self.running.load(Ordering::SeqCst) && !done() {
+            match cmd_interface.handle_responder_msg(&mut transport, &mut msg_buffer) {
+                Ok(_) => {}
+                Err(e) => {
+                    writeln!(console_writer, "PLDM_APP: Error handling responder msg: {:?}", e)
+                        .unwrap();
+                }
+            }
+
+            if cmd_interface.should_start_initiator_mode() {
+                pldm_initiator_inline(cmd_interface, self.running, &mut transport, &mut msg_buffer);
+            }
+        }
+        Ok(())
+    }
+
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Relaxed);
     }

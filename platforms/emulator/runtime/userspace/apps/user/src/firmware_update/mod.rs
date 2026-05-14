@@ -12,12 +12,6 @@ use core::fmt::Write;
     feature = "test-firmware-update-streaming",
     feature = "test-firmware-update-flash"
 ))]
-use crate::EXECUTOR;
-
-#[cfg(any(
-    feature = "test-firmware-update-streaming",
-    feature = "test-firmware-update-flash"
-))]
 use caliptra_mcu_libapi_caliptra::firmware_update::{FirmwareUpdater, PldmFirmwareDeviceParams};
 
 use caliptra_mcu_libtock_platform::ErrorCode;
@@ -48,7 +42,6 @@ pub fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), ErrorCode> 
             staging_memory,
             &fw_params,
             dma_mapping,
-            EXECUTOR.get().spawner(),
         );
         updater.start()?;
     }
@@ -66,7 +59,6 @@ pub fn firmware_update<D: DMAMapping>(dma_mapping: &D) -> Result<(), ErrorCode> 
             staging_memory,
             &fw_params,
             dma_mapping,
-            EXECUTOR.get().spawner(),
         );
         updater.start()?;
     }
