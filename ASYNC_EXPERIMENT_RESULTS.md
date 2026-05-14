@@ -234,11 +234,17 @@ suspend point, with save/restore code for all live locals. With sync handlers, d
 is a plain `match` calling regular functions — zero state machines, zero save/restore,
 zero poll/match logic. The compiler uses normal stack frames instead.
 
-### Trade-off
+### Trade-off: None
 
-The one thing lost: if a mailbox command takes unexpectedly long, other embassy tasks
-block during the `yield_wait` loop. In practice this is fine — Caliptra mailbox
-responds in microseconds and there's no real concurrent work that can't wait.
+There is no behavioral difference. In the async model, `mailbox.execute().await` calls
+`yield_wait` internally via the Tock executor's poll loop — the single-threaded executor
+cannot run other embassy tasks while the current task's future is being polled. Other
+tasks only get a chance to run when the *outermost* `.await` (transport receive/send)
+yields back to the executor.
+
+Since mailbox operations complete in microseconds and the executor is single-threaded,
+both models block identically on crypto/mailbox I/O. The only difference is whether the
+compiler generates a 49KB state machine around those blocking points.
 
 ## Conclusion
 
