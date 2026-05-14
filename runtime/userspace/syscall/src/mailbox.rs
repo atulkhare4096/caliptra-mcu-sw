@@ -1,18 +1,12 @@
 // Licensed under the Apache-2.0 license
 
 //! # Mailbox Interface
-extern crate alloc;
 use crate::DefaultSyscalls;
-use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_api::mailbox::MailboxReqHeader;
-use caliptra_mcu_libtock_platform::{share, DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
-use core::{hint::black_box, marker::PhantomData};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
+use core::marker::PhantomData;
 
-// Global mutex to ensure that multiple tasks do not overwrite each other's upcall pointers.
-static MAILBOX_MUTEX: Mutex<CriticalSectionRawMutex, u32> = Mutex::new(0);
 const PAYLOAD_CHUNK_SIZE: usize = 256;
 
 /// Mailbox interface user interface.
@@ -69,69 +63,39 @@ impl<S: Syscalls> Mailbox<S> {
     /// # Returns
     /// - `Ok(usize)` on success, containing the number of bytes written to the response buffer.
     /// - `Err(ErrorCode)` if the command fails.
-    pub async fn execute(
+    pub fn execute(
         &self,
         command: u32,
         input_data: &[u8],
         response_buffer: &mut [u8],
     ) -> Result<usize, MailboxError> {
-        let result = {
-            // lock the global mailbox mutex to ensure exclusive access
-            let mutex = MAILBOX_MUTEX.lock().await;
+        let (bytes, error_code, _) = blocking::subscribe_allow_ro_rw_and_wait::<S>(
+            self.driver_num,
+            mailbox_subscribe::COMMAND_DONE,
+            mailbox_ro_buffer::INPUT,
+            input_data,
+            mailbox_rw_buffer::RESPONSE,
+            response_buffer,
+            mailbox_cmd::EXECUTE_COMMAND,
+            command,
+            0,
+        )
+        .map_err(MailboxError::ErrorCode)?;
 
-            // Subscribe to the asynchronous notification for when the command is processed
-            let result = share::scope::<(), _, _>(|_handle| {
-                let mut sub = TockSubscribe::subscribe_allow_ro_rw::<S, DefaultConfig>(
-                    self.driver_num,
-                    mailbox_subscribe::COMMAND_DONE,
-                    mailbox_ro_buffer::INPUT,
-                    input_data,
-                    mailbox_rw_buffer::RESPONSE,
-                    response_buffer,
-                );
-
-                // Issue the command to the kernel
-                match S::command(self.driver_num, mailbox_cmd::EXECUTE_COMMAND, command, 0)
-                    .to_result::<(), ErrorCode>()
-                {
-                    Ok(()) => Ok(TockSubscribe::subscribe_finish(sub)),
-                    Err(err) => {
-                        S::unallow_ro(self.driver_num, mailbox_ro_buffer::INPUT);
-                        S::unallow_rw(self.driver_num, mailbox_rw_buffer::RESPONSE);
-                        // If command returned error immediately, cancel the future
-                        sub.cancel();
-                        Err(MailboxError::ErrorCode(err))
-                    }
-                }
-            })?
-            .await;
-
-            black_box(*mutex); // Ensure the mutex is not optimized away
-
-            result
-        };
-
-        match result {
-            Ok((bytes, error_code, _)) => {
-                if error_code != 0 {
-                    Err(MailboxError::MailboxError(error_code))
-                } else {
-                    Ok(bytes as usize)
-                }
-            }
-            Err(err) => Err(MailboxError::ErrorCode(err)),
+        if error_code != 0 {
+            Err(MailboxError::MailboxError(error_code))
+        } else {
+            Ok(bytes as usize)
         }
     }
 
-    pub async fn execute_with_payload_stream(
+    pub fn execute_with_payload_stream(
         &self,
         command: u32,
         header: Option<&[u8]>,
         payload: &mut dyn PayloadStream,
         response_buffer: &mut [u8],
     ) -> Result<usize, MailboxError> {
-        let mutex = MAILBOX_MUTEX.lock().await;
-
         let request_len = payload.size() + header.map_or(0, |h| h.len());
 
         // Send the command to initiate mailbox request
@@ -147,95 +111,58 @@ impl<S: Syscalls> Mailbox<S> {
         // Send the header if provided
         let mut buffer = [0u8; PAYLOAD_CHUNK_SIZE];
         if let Some(header) = header {
-            // If a header is provided, write it to the buffer first
             buffer[..header.len()].copy_from_slice(header);
-            self.send_chunk(buffer[..header.len()].as_ref()).await?;
+            self.send_chunk(buffer[..header.len()].as_ref())?;
         }
 
         // Send the payload in chunks
         loop {
-            // Read a chunk of data from the payload stream
             let sz = payload
                 .read(&mut buffer)
-                .await
                 .map_err(MailboxError::ErrorCode)?;
             if sz == 0 {
-                break; // No more data to read
+                break;
             }
-            self.send_chunk(buffer[..sz].as_ref()).await?;
+            self.send_chunk(buffer[..sz].as_ref())?;
         }
 
         // Execute the command
-        let result = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                mailbox_subscribe::COMMAND_DONE,
-                mailbox_rw_buffer::RESPONSE,
-                response_buffer,
-            );
+        let (bytes, error_code, _) = blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            mailbox_subscribe::COMMAND_DONE,
+            mailbox_rw_buffer::RESPONSE,
+            response_buffer,
+            mailbox_cmd::EXECUTE_CHUNKED_REQUEST,
+            command,
+            0,
+        )
+        .map_err(MailboxError::ErrorCode)?;
 
-            // Issue the command to the kernel
-            match S::command(
-                self.driver_num,
-                mailbox_cmd::EXECUTE_CHUNKED_REQUEST,
-                command,
-                0,
-            )
-            .to_result::<(), ErrorCode>()
-            {
-                Ok(()) => Ok(TockSubscribe::subscribe_finish(sub)),
-                Err(err) => {
-                    S::unallow_rw(self.driver_num, mailbox_rw_buffer::RESPONSE);
-                    sub.cancel();
-                    Err(MailboxError::ErrorCode(err))
-                }
-            }
-        })?
-        .await;
-        black_box(*mutex); // Ensure the mutex is not optimized away
-        match result {
-            Ok((bytes, error_code, _)) => {
-                if error_code != 0 {
-                    Err(MailboxError::MailboxError(error_code))
-                } else {
-                    Ok(bytes as usize)
-                }
-            }
-            Err(err) => Err(MailboxError::ErrorCode(err)),
+        if error_code != 0 {
+            Err(MailboxError::MailboxError(error_code))
+        } else {
+            Ok(bytes as usize)
         }
     }
 
-    async fn send_chunk(&self, buffer: &[u8]) -> Result<(u32, u32, u32), MailboxError> {
-        share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                mailbox_subscribe::COMMAND_DONE,
-                mailbox_ro_buffer::INPUT,
-                buffer,
-            );
-
-            // Issue the command to the kernel
-            match S::command(self.driver_num, mailbox_cmd::NEXT_PAYLOAD_CHUNK, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                Ok(()) => Ok(TockSubscribe::subscribe_finish(sub)),
-                Err(err) => {
-                    S::unallow_ro(self.driver_num, mailbox_ro_buffer::INPUT);
-                    sub.cancel();
-                    Err(MailboxError::ErrorCode(err))
-                }
-            }
-        })?
-        .await
+    fn send_chunk(&self, buffer: &[u8]) -> Result<(u32, u32, u32), MailboxError> {
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            mailbox_subscribe::COMMAND_DONE,
+            mailbox_ro_buffer::INPUT,
+            buffer,
+            mailbox_cmd::NEXT_PAYLOAD_CHUNK,
+            0,
+            0,
+        )
         .map_err(MailboxError::ErrorCode)
     }
 }
-#[async_trait(?Send)]
 pub trait PayloadStream {
     /// Returns the size of the payload in bytes.
     fn size(&self) -> usize;
 
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode>;
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode>;
 }
 
 // -----------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+pub mod blocking;
 mod future;
 pub use future::TockSubscribe;
 mod tock_executor;

@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::share;
-use caliptra_mcu_libtock_platform::{DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
 use core::marker::PhantomData;
 
 type EndpointId = u8;
@@ -61,30 +60,20 @@ impl<S: Syscalls> Mctp<S> {
     /// # Returns
     /// * `(u32, MessageInfo)` - On success, returns tuple containing length of the request received and the message information containing the source EID, message tag
     /// * `ErrorCode` - The error code on failure
-    pub async fn receive_request(&self, req: &mut [u8]) -> Result<(u32, MessageInfo), ErrorCode> {
+    pub fn receive_request(&self, req: &mut [u8]) -> Result<(u32, MessageInfo), ErrorCode> {
         if req.is_empty() {
-            Err(ErrorCode::Invalid)?;
+            return Err(ErrorCode::Invalid);
         }
 
-        let (recv_len, _, info) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::RECEIVED_REQUEST,
-                allow_rw::READ_REQUEST,
-                req,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
+        let (recv_len, _, info) = blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            subscribe::RECEIVED_REQUEST,
+            allow_rw::READ_REQUEST,
+            req,
+            command::RECEIVE_REQUEST,
+            0,
+            0,
+        )?;
 
         Ok((recv_len, info.into()))
     }
@@ -98,41 +87,27 @@ impl<S: Syscalls> Mctp<S> {
     /// # Returns
     /// * `()` - On success
     /// * `ErrorCode` - The error code on failure
-    pub async fn send_response(&self, resp: &[u8], info: MessageInfo) -> Result<(), ErrorCode> {
+    pub fn send_response(&self, resp: &[u8], info: MessageInfo) -> Result<(), ErrorCode> {
         let max_size = self.max_message_size()? as usize;
 
         if resp.is_empty() || resp.len() > max_size {
-            Err(ErrorCode::Invalid)?;
+            return Err(ErrorCode::Invalid);
         }
 
-        let ro_sub = share::scope::<(), _, _>(|_handle| {
-            let mut ro_sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::MESSAGE_TRANSMITTED,
-                allow_ro::MESSAGE_WRITE,
-                resp,
-            );
+        let (result, _, _) = blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            subscribe::MESSAGE_TRANSMITTED,
+            allow_ro::MESSAGE_WRITE,
+            resp,
+            command::SEND_RESPONSE,
+            info.eid as u32,
+            (info.tag & 0x7) as u32,
+        )?;
 
-            if let Err(e) = S::command(
-                self.driver_num,
-                command::SEND_RESPONSE,
-                info.eid as u32,
-                (info.tag & 0x7) as u32,
-            )
-            .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                ro_sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(ro_sub))
-        })?;
-
-        ro_sub.await.map(|(result, _, _)| match result {
+        match result {
             0 => Ok(()),
             _ => Err(result.try_into().unwrap_or(ErrorCode::Fail)),
-        })?
+        }
     }
 
     /// Send the MCTP request to the destination EID
@@ -146,32 +121,22 @@ impl<S: Syscalls> Mctp<S> {
     /// # Returns
     /// * `Tag` - The message tag assigned to the request
     /// * `ErrorCode` - The error code on failure
-    pub async fn send_request(&self, dest_eid: u8, req: &[u8]) -> Result<Tag, ErrorCode> {
+    pub fn send_request(&self, dest_eid: u8, req: &[u8]) -> Result<Tag, ErrorCode> {
         let max_size = self.max_message_size()? as usize;
 
         if req.is_empty() || req.len() > max_size {
-            Err(ErrorCode::Invalid)?;
+            return Err(ErrorCode::Invalid);
         }
 
-        let (result, _, info) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::MESSAGE_TRANSMITTED,
-                allow_ro::MESSAGE_WRITE,
-                req,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::SEND_REQUEST, dest_eid as u32, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
+        let (result, _, info) = blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            subscribe::MESSAGE_TRANSMITTED,
+            allow_ro::MESSAGE_WRITE,
+            req,
+            command::SEND_REQUEST,
+            dest_eid as u32,
+            0,
+        )?;
 
         let info: MessageInfo = info.into();
 
@@ -191,40 +156,25 @@ impl<S: Syscalls> Mctp<S> {
     /// # Returns
     /// * `(u32, MessageInfo)` - On success, returns tuple containing length of the response received and the message information containing the source EID, message tag
     /// * `ErrorCode` - The error code on failure
-    pub async fn receive_response(
+    pub fn receive_response(
         &self,
         resp: &mut [u8],
         tag: Tag,
         src_eid: u8,
     ) -> Result<(u32, MessageInfo), ErrorCode> {
         if resp.is_empty() || tag > 0x7 {
-            Err(ErrorCode::Invalid)?;
+            return Err(ErrorCode::Invalid);
         }
 
-        let (recv_len, _, info) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::RECEIVED_RESPONSE,
-                allow_rw::READ_RESPONSE,
-                resp,
-            );
-            if let Err(e) = S::command(
-                self.driver_num,
-                command::RECEIVE_RESPONSE,
-                src_eid as u32,
-                tag as u32,
-            )
-            .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            // The command was successful, so we can finish the subscription
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
+        let (recv_len, _, info) = blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            subscribe::RECEIVED_RESPONSE,
+            allow_rw::READ_RESPONSE,
+            resp,
+            command::RECEIVE_RESPONSE,
+            src_eid as u32,
+            tag as u32,
+        )?;
 
         Ok((recv_len, info.into()))
     }

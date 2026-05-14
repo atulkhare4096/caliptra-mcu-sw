@@ -1,12 +1,10 @@
 // Licensed under the Apache-2.0 license
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::{share, DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
-use core::{hint::black_box, marker::PhantomData};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
+use core::marker::PhantomData;
 
-static MCU_MBOX_MUTEX: Mutex<CriticalSectionRawMutex, u32> = Mutex::new(0);
 pub type CmdCode = u32;
 
 /// Represents the current status of the MCU mailbox.
@@ -78,7 +76,7 @@ impl<S: Syscalls> McuMbox<S> {
     ///
     /// Returns a tuple containing the command code and the number of bytes received,
     /// or an error if the operation fails.
-    pub async fn receive_command(
+    pub fn receive_command(
         &self,
         data: &mut [u8],
         on_listening_cb: Option<impl FnOnce()>,
@@ -87,72 +85,37 @@ impl<S: Syscalls> McuMbox<S> {
             return Err(ErrorCode::Invalid);
         }
 
-        let mutex = MCU_MBOX_MUTEX.lock().await;
-        let rx_fut = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::REQUEST_RECEIVED,
-                rw_allow::REQUEST,
-                data,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?;
-
         if let Some(on_listening_cb) = on_listening_cb {
             on_listening_cb();
         }
 
-        let (command, recv_len, _) = rx_fut.await?;
-
-        black_box(*mutex); // Ensure the mutex is not optimized away
+        let (command, recv_len, _) = blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            subscribe::REQUEST_RECEIVED,
+            rw_allow::REQUEST,
+            data,
+            command::RECEIVE_REQUEST,
+            0,
+            0,
+        )?;
 
         Ok((command, recv_len as usize))
     }
 
-    /// Sends a response to the MCU mailbox sender asynchronously (receiver mode).
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - A byte slice containing the response data to send.
-    ///
-    /// # Returns
-    /// * `Ok(())` on success.
-    /// * `Err(ErrorCode)` if the operation fails.
-    pub async fn send_response(&self, data: &[u8]) -> Result<(), ErrorCode> {
+    pub fn send_response(&self, data: &[u8]) -> Result<(), ErrorCode> {
         if data.is_empty() {
             return Err(ErrorCode::Invalid);
         }
 
-        let mutex = MCU_MBOX_MUTEX.lock().await;
-        let (_, _, _) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::RESPONSE_SENT,
-                ro_allow::RESPONSE,
-                data,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::SEND_RESPONSE, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                S::unallow_ro(self.driver_num, ro_allow::RESPONSE);
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
-
-        black_box(*mutex);
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            subscribe::RESPONSE_SENT,
+            ro_allow::RESPONSE,
+            data,
+            command::SEND_RESPONSE,
+            0,
+            0,
+        )?;
 
         Ok(())
     }

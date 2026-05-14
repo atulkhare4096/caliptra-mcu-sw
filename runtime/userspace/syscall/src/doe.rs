@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::share;
-use caliptra_mcu_libtock_platform::{DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
 use core::marker::PhantomData;
 
 pub struct Doe<S: Syscalls = DefaultSyscalls> {
@@ -36,64 +35,38 @@ impl<S: Syscalls> Doe<S> {
     /// # Returns
     /// - `Ok(usize)` - The number of bytes received.
     /// - `Err(ErrorCode)` - An error code if the operation fails.
-    pub async fn receive_message(&self, buf: &mut [u8]) -> Result<u32, ErrorCode> {
+    pub fn receive_message(&self, buf: &mut [u8]) -> Result<u32, ErrorCode> {
         if buf.is_empty() {
             return Err(ErrorCode::Invalid);
         }
 
-        let (recv_len, _, _) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::MESSAGE_RECEIVED,
-                allow_rw::MESSAGE_READ,
-                buf,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::RECEIVE_MESSAGE, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
+        let (recv_len, _, _) = blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            subscribe::MESSAGE_RECEIVED,
+            allow_rw::MESSAGE_READ,
+            buf,
+            command::RECEIVE_MESSAGE,
+            0,
+            0,
+        )?;
 
         Ok(recv_len)
     }
 
-    /// Sends a DOE message.
-    /// # Arguments
-    /// - `buf` - A buffer containing the message to be sent.
-    /// # Returns
-    /// - `Ok(())` - If the message was sent successfully.
-    /// - `Err(ErrorCode)` - An error code if the operation fails.
-    pub async fn send_message(&self, buf: &[u8]) -> Result<(), ErrorCode> {
+    pub fn send_message(&self, buf: &[u8]) -> Result<(), ErrorCode> {
         if buf.is_empty() {
             return Err(ErrorCode::Invalid);
         }
 
-        let (_, _, _) = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::MESSAGE_TRANSMITTED,
-                allow_ro::MESSAGE_WRITE,
-                buf,
-            );
-
-            if let Err(e) = S::command(self.driver_num, command::SEND_MESSAGE, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await?;
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            subscribe::MESSAGE_TRANSMITTED,
+            allow_ro::MESSAGE_WRITE,
+            buf,
+            command::SEND_MESSAGE,
+            0,
+            0,
+        )?;
 
         Ok(())
     }

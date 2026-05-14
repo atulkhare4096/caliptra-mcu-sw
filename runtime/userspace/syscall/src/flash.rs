@@ -3,8 +3,8 @@
 // Flash userspace library
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::{share, DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
 use core::marker::PhantomData;
 
 pub struct SpiFlash<S: Syscalls = DefaultSyscalls> {
@@ -69,9 +69,7 @@ impl<S: Syscalls> SpiFlash<S> {
             .map(|x: u32| x as usize)
     }
 
-    /// Internal function to read a chunk of data from the flash memory.
-    /// Don't use this function directly, use `read` instead.
-    async fn read_chunk(
+    fn read_chunk(
         &self,
         address: usize,
         len: usize,
@@ -82,60 +80,31 @@ impl<S: Syscalls> SpiFlash<S> {
             return Err(ErrorCode::NoMem);
         }
 
-        let result = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::READ_DONE,
-                rw_allow::READ,
-                buf,
-            );
-
-            if let Err(e) = S::command(
-                self.driver_num,
-                flash_storage_cmd::READ,
-                address as u32,
-                len as u32,
-            )
-            .to_result::<(), ErrorCode>()
-            {
-                S::unallow_rw(self.driver_num, rw_allow::READ);
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await;
+        blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            subscribe::READ_DONE,
+            rw_allow::READ,
+            buf,
+            flash_storage_cmd::READ,
+            address as u32,
+            len as u32,
+        )?;
 
         S::unallow_rw(self.driver_num, rw_allow::READ);
-        result.map(|_| ())
+        Ok(())
     }
 
-    /// Reads data from the SPI flash memory in an asynchronous manner.
-    ///
-    /// # Arguments
-    /// * `address` - The address in the SPI flash memory to read from.
-    /// * `len` - The number of bytes to read.
-    /// * `buf` - The buffer to read the data into. The buffer must be at least `len` bytes long.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` if the read operation is successful.
-    /// * `Err(ErrorCode)` if there is an error.
-    pub async fn read(&self, address: usize, len: usize, buf: &mut [u8]) -> Result<(), ErrorCode> {
+    pub fn read(&self, address: usize, len: usize, buf: &mut [u8]) -> Result<(), ErrorCode> {
         if buf.len() < len {
             return Err(ErrorCode::NoMem);
         }
 
-        // Split into chunk reads
         let chunk_size = self.get_chunk_size()?;
         let mut remaining = len;
         let mut offset = 0;
         while remaining > 0 {
             let len = core::cmp::min(remaining, chunk_size);
-            self.read_chunk(address + offset, len, &mut buf[offset..offset + len])
-                .await?;
+            self.read_chunk(address + offset, len, &mut buf[offset..offset + len])?;
             remaining -= len;
             offset += len;
         }
@@ -143,70 +112,36 @@ impl<S: Syscalls> SpiFlash<S> {
         Ok(())
     }
 
-    /// Internal helper function to write a chunk of data to the flash memory.
-    /// Don't use this function directly, use `write` instead.
-    async fn write_chunk(&self, address: usize, len: usize, buf: &[u8]) -> Result<(), ErrorCode> {
-        // Check if the buffer is large enough and the length is within the chunk size
+    fn write_chunk(&self, address: usize, len: usize, buf: &[u8]) -> Result<(), ErrorCode> {
         if buf.len() < len || len > self.get_chunk_size()? {
             return Err(ErrorCode::NoMem);
         }
 
-        let result = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                subscribe::WRITE_DONE,
-                ro_allow::WRITE,
-                buf,
-            );
-
-            if let Err(e) = S::command(
-                self.driver_num,
-                flash_storage_cmd::WRITE,
-                address as u32,
-                len as u32,
-            )
-            .to_result::<(), ErrorCode>()
-            {
-                S::unallow_ro(self.driver_num, ro_allow::WRITE);
-                // Cancel the future if the command fails
-                sub.cancel();
-                Err(e)?;
-            }
-
-            Ok(TockSubscribe::subscribe_finish(sub))
-        })?
-        .await;
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            subscribe::WRITE_DONE,
+            ro_allow::WRITE,
+            buf,
+            flash_storage_cmd::WRITE,
+            address as u32,
+            len as u32,
+        )?;
 
         S::unallow_ro(self.driver_num, ro_allow::WRITE);
-
-        result.map(|_| ())
+        Ok(())
     }
 
-    /// Writes an arbitrary number of bytes to the flash memory in an asynchronous manner.
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The starting address to write to.
-    /// * `len` - The number of bytes to write.
-    /// * `buf` - The buffer containing the bytes to write.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` if the write operation is successful.
-    /// * `Err(ErrorCode)` if there is an error.
-    pub async fn write(&self, address: usize, len: usize, buf: &[u8]) -> Result<(), ErrorCode> {
+    pub fn write(&self, address: usize, len: usize, buf: &[u8]) -> Result<(), ErrorCode> {
         if buf.len() < len {
             return Err(ErrorCode::NoMem);
         }
 
-        // Split into chunk writes
         let chunk_size = self.get_chunk_size()?;
         let mut remaining = len;
         let mut offset = 0;
         while remaining > 0 {
             let len = core::cmp::min(remaining, chunk_size);
-            self.write_chunk(address + offset, len, &buf[offset..offset + len])
-                .await?;
+            self.write_chunk(address + offset, len, &buf[offset..offset + len])?;
             remaining -= len;
             offset += len;
         }
@@ -214,29 +149,15 @@ impl<S: Syscalls> SpiFlash<S> {
         Ok(())
     }
 
-    /// Erases an arbitrary number of bytes from the flash memory.
-    ///
-    /// This method erases `len` bytes from the flash memory starting at the specified `address`.
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The starting address to erase from.
-    /// * `len` - The number of bytes to erase.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` if the erase operation is successful.
-    /// * `Err(ErrorCode)` if there is an error.
-    pub async fn erase(&self, address: usize, len: usize) -> Result<(), ErrorCode> {
-        let async_erase_sub = TockSubscribe::subscribe::<S>(self.driver_num, subscribe::ERASE_DONE);
-        S::command(
+    pub fn erase(&self, address: usize, len: usize) -> Result<(), ErrorCode> {
+        blocking::subscribe_and_wait::<S>(
             self.driver_num,
+            subscribe::ERASE_DONE,
             flash_storage_cmd::ERASE,
             address as u32,
             len as u32,
-        )
-        .to_result::<(), ErrorCode>()?;
-        async_erase_sub.await.map(|_| Ok(()))?
+        )?;
+        Ok(())
     }
 }
 

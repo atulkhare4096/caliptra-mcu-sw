@@ -6,8 +6,8 @@
 //! transfers between AXI source and AXI destination addresses.
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::{share, AllowRo, DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
 use core::marker::PhantomData;
 /// DMA interface.
 pub struct DMA<S: Syscalls = DefaultSyscalls> {
@@ -70,39 +70,37 @@ impl<S: Syscalls> DMA<S> {
     /// # Returns
     /// * `Ok(())` if the transfer starts successfully.
     /// * `Err(ErrorCode)` if the transfer fails.
-    pub async fn xfer(&self, transaction: &DMATransaction<'_>) -> Result<(), ErrorCode> {
+    pub fn xfer(&self, transaction: &DMATransaction<'_>) -> Result<(), ErrorCode> {
         self.setup(transaction)?;
 
         match transaction.source {
-            DMASource::Buffer(buffer) => self.xfer_src_buffer(buffer).await.map(|_| ()),
-            DMASource::Address(_) => self.xfer_src_address().await.map(|_| ()),
+            DMASource::Buffer(buffer) => self.xfer_src_buffer(buffer),
+            DMASource::Address(_) => self.xfer_src_address(),
         }
     }
 
-    async fn xfer_src_address(&self) -> Result<(), ErrorCode> {
-        let async_start = TockSubscribe::subscribe::<S>(self.driver_num, dma_subscribe::XFER_DONE);
-        S::command(self.driver_num, dma_cmd::XFER_AXI_TO_AXI, 0, 0).to_result::<(), ErrorCode>()?;
-        async_start.await.map(|_| ())
+    fn xfer_src_address(&self) -> Result<(), ErrorCode> {
+        blocking::subscribe_and_wait::<S>(
+            self.driver_num,
+            dma_subscribe::XFER_DONE,
+            dma_cmd::XFER_AXI_TO_AXI,
+            0,
+            0,
+        )?;
+        Ok(())
     }
 
-    async fn xfer_src_buffer(&self, buffer: &[u8]) -> Result<(), ErrorCode> {
-        let async_start = TockSubscribe::subscribe::<S>(self.driver_num, dma_subscribe::XFER_DONE);
-
-        share::scope::<AllowRo<_, DMA_DRIVER_NUM, { dma_ro_buffer::LOCAL_SOURCE }>, _, _>(
-            |handle| {
-                let allow_ro = handle;
-                S::allow_ro::<DefaultConfig, DMA_DRIVER_NUM, { dma_ro_buffer::LOCAL_SOURCE }>(
-                    allow_ro, buffer,
-                )?;
-
-                // Start the DMA transfer
-                S::command(self.driver_num, dma_cmd::XFER_LOCAL_TO_AXI, 0, 0)
-                    .to_result::<(), ErrorCode>()?;
-                Ok(())
-            },
+    fn xfer_src_buffer(&self, buffer: &[u8]) -> Result<(), ErrorCode> {
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            dma_subscribe::XFER_DONE,
+            dma_ro_buffer::LOCAL_SOURCE,
+            buffer,
+            dma_cmd::XFER_LOCAL_TO_AXI,
+            0,
+            0,
         )?;
-
-        async_start.await.map(|_| ())
+        Ok(())
     }
 
     fn setup(&self, config: &DMATransaction<'_>) -> Result<(), ErrorCode> {
