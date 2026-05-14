@@ -38,9 +38,7 @@ rustflags = [
     # the same address in the binary. However, it can save a fair bit of code  size.
     "-C",
     "link-arg=-icf=all",
-    # Remap absolute paths embedded in panic messages to shorter relative paths.
-    # This saves ~20 KB of .rodata in the final binary.
-    "--remap-path-prefix=/home/atulkhare/src/caliptra-mcu-sw/=",
-    "--remap-path-prefix=/home/atulkhare/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/=registry:",
-    "--remap-path-prefix=/home/atulkhare/.cargo/git/checkouts/=git:",
+    # Strip absolute build paths from panic strings to reduce .rodata size.
+    "--remap-path-prefix=src=",
+    "--remap-path-prefix=runtime/=r/",
 ]

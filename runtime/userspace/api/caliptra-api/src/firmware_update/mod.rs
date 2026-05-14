@@ -9,7 +9,6 @@ use crate::firmware_update::pldm_client::pldm_total_component_size;
 use crate::firmware_update::pldm_context::State;
 use crate::mailbox_api::MAX_CRYPTO_MBOX_DATA_SIZE;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_api::mailbox::{
     ActivateFirmwareReq, ActivateFirmwareResp, CommandId, FirmwareVerifyResp, FirmwareVerifyResult,
     FwInfoResp, GetImageInfoReq, GetImageInfoResp, MailboxReqHeader, MailboxRespHeader, Request,
@@ -28,13 +27,10 @@ use caliptra_mcu_libsyscall_caliptra::dma::{
 use caliptra_mcu_libsyscall_caliptra::mailbox::Mailbox;
 use caliptra_mcu_libsyscall_caliptra::mailbox::{MailboxError, PayloadStream};
 use caliptra_mcu_libtock_platform::ErrorCode;
-use caliptra_mcu_libtockasync::TockExecutor;
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
-use caliptra_mcu_pldm_lib::daemon::PldmService;
-use embassy_executor::Spawner;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
@@ -51,7 +47,6 @@ pub struct FirmwareUpdater<'a, D: DMAMapping> {
     mailbox: Mailbox,
     params: &'a PldmFirmwareDeviceParams,
     dma_mapping: &'a D,
-    spawner: Spawner,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,31 +66,27 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         staging_memory: &'static dyn StagingMemory,
         params: &'a PldmFirmwareDeviceParams,
         dma_mapping: &'a D,
-        spawner: Spawner,
     ) -> Self {
         Self {
             staging_memory,
             mailbox: Mailbox::new(),
             params,
             dma_mapping,
-            spawner,
         }
     }
 
-    pub async fn start(&mut self) -> Result<(), ErrorCode> {
+    pub fn start(&mut self) -> Result<(), ErrorCode> {
         // Download firmware image to staging memory
-        pldm_client::initialize_pldm(
-            self.spawner,
+        let mut service = pldm_client::initialize_pldm(
             self.params.descriptors,
             self.params.fw_params,
             self.staging_memory,
-        )
-        .await?;
+        )?;
 
-        pldm_client::pldm_wait(State::Verifying).await?;
+        pldm_client::pldm_wait(&mut service, State::Verifying)?;
 
         // Download is complete, verify the image
-        let flash_header = self.verify().await;
+        let flash_header = self.verify();
         if flash_header.is_err() {
             pldm_client::pldm_set_verification_result(VerifyResult::VerifyErrorVerificationFailure);
             // Abort firmware update
@@ -103,31 +94,31 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
         let flash_header = flash_header.unwrap();
         pldm_client::pldm_set_verification_result(VerifyResult::VerifySuccess);
-        pldm_client::pldm_wait(State::Apply).await?;
+        pldm_client::pldm_wait(&mut service, State::Apply)?;
 
         // Mark image as valid in staging memory
         let img_len = pldm_total_component_size();
-        self.staging_memory.image_valid(img_len).await?;
+        self.staging_memory.image_valid(img_len)?;
 
         pldm_client::pldm_set_apply_result(ApplyResult::ApplySuccess);
-        pldm_client::pldm_wait(State::Activate).await?;
+        pldm_client::pldm_wait(&mut service, State::Activate)?;
 
         // Update Caliptra
-        let result = self.update_caliptra(&flash_header).await;
+        let result = self.update_caliptra(&flash_header);
         if result.is_err() {
             // Abort firmware update
             return Err(ErrorCode::Fail);
         }
 
-        self.set_auth_manifest().await?;
+        self.set_auth_manifest()?;
 
         // Update MCU and reboot
-        self.update_mcu(&flash_header).await?;
+        self.update_mcu(&flash_header)?;
 
         Ok(())
     }
 
-    pub async fn get_image_toc(
+    pub fn get_image_toc(
         &self,
         num_images: usize,
         image_headers_offset: usize,
@@ -138,7 +129,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let mut image_header = [0u8; core::mem::size_of::<ImageHeader>()];
             self.staging_memory
                 .read(current_header_offset, &mut image_header)
-                .await?;
+                ?;
             let (image_header, _) =
                 ImageHeader::read_from_prefix(&image_header).map_err(|_| ErrorCode::Fail)?;
             image_header.verify().then_some(()).ok_or(ErrorCode::Fail)?;
@@ -152,7 +143,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         Err(ErrorCode::Fail)
     }
 
-    pub async fn get_image_toc_by_index(
+    pub fn get_image_toc_by_index(
         &self,
         num_images: usize,
         image_headers_offset: usize,
@@ -163,7 +154,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
         let offset = image_headers_offset + index * core::mem::size_of::<ImageHeader>();
         let mut image_header = [0u8; core::mem::size_of::<ImageHeader>()];
-        self.staging_memory.read(offset, &mut image_header).await?;
+        self.staging_memory.read(offset, &mut image_header)?;
         let (image_header, _) =
             ImageHeader::read_from_prefix(&image_header).map_err(|_| ErrorCode::Fail)?;
         image_header.verify().then_some(()).ok_or(ErrorCode::Fail)?;
@@ -171,11 +162,11 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         Ok(image_header)
     }
 
-    async fn set_auth_manifest(&mut self) -> Result<(), ErrorCode> {
+    fn set_auth_manifest(&mut self) -> Result<(), ErrorCode> {
         let mut flash_header = [0u8; core::mem::size_of::<FlashHeader>()];
         self.staging_memory
             .read(0, &mut flash_header)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         let (flash_header, _) =
             FlashHeader::read_from_prefix(&flash_header).map_err(|_| ErrorCode::Fail)?;
@@ -190,7 +181,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 flash_header.image_headers_offset as usize,
                 SOC_MANIFEST_IDENTIFIER,
             )
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
 
         let mut req = AuthManifestReqHeader {
@@ -202,7 +193,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             MailboxPayloadStream::new(self.staging_memory, manifest_offset, manifest_len);
 
         // Calculate the mailbox checksum
-        let mut checksum = payload_stream.get_bytesum().await;
+        let mut checksum = payload_stream.get_bytesum();
         for b in CommandId::SET_AUTH_MANIFEST.0.to_le_bytes().iter() {
             checksum = checksum.wrapping_add(u32::from(*b));
         }
@@ -222,7 +213,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                     &mut payload_stream,
                     response_buffer,
                 )
-                .await;
+                ;
             match result {
                 Ok(_) => return Ok(()),
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -231,12 +222,12 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
     }
 
-    async fn verify(&mut self) -> Result<FlashHeader, ErrorCode> {
+    fn verify(&mut self) -> Result<FlashHeader, ErrorCode> {
         // Parse the downloaded firmware image
         let mut flash_header = [0u8; core::mem::size_of::<FlashHeader>()];
         self.staging_memory
             .read(0, &mut flash_header)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         let (flash_header, _) =
             FlashHeader::read_from_prefix(&flash_header).map_err(|_| ErrorCode::Fail)?;
@@ -254,14 +245,14 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 flash_header.image_headers_offset as usize,
                 CALIPTRA_FMC_RT_IDENTIFIER,
             )
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         self.process_caliptra_fw(
             cptra_image_offset,
             cptra_image_len,
             CaliptraFwAction::Verify,
         )
-        .await?;
+        ?;
 
         // Verify the new Auth Manifest
         writeln!(
@@ -275,9 +266,9 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 flash_header.image_headers_offset as usize,
                 SOC_MANIFEST_IDENTIFIER,
             )
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
-        self.verify_manifest(manifest_offset, manifest_len).await?;
+        self.verify_manifest(manifest_offset, manifest_len)?;
 
         for i in 0..flash_header.image_count as usize {
             let image_header = self
@@ -286,7 +277,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                     flash_header.image_headers_offset as usize,
                     i,
                 )
-                .await?;
+                ?;
 
             match image_header.identifier {
                 CALIPTRA_FMC_RT_IDENTIFIER => {
@@ -304,19 +295,19 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
 
             let metadata = self
                 .get_image_metadata(manifest_offset, manifest_len, image_header.identifier)
-                .await?;
+                ?;
 
             self.verify_mcu_or_soc_image(
                 image_header.offset as usize,
                 image_header.size as usize,
                 &metadata,
             )
-            .await?;
+            ?;
         }
         Ok(flash_header)
     }
 
-    pub async fn get_image_metadata(
+    pub fn get_image_metadata(
         &self,
         manifest_staging_mem_offset: usize,
         manifest_size: usize,
@@ -333,7 +324,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         let mut entry_count = [0u8; 4];
         self.staging_memory
             .read(entry_count_offset, &mut entry_count)
-            .await?;
+            ?;
         let entry_count = u32::from_le_bytes(entry_count);
 
         let image_metadata_collection_offset = manifest_staging_mem_offset
@@ -350,7 +341,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             }
             self.staging_memory
                 .read(metadata_offset, &mut metadata_bytes)
-                .await?;
+                ?;
 
             let (metadata, _) = AuthManifestImageMetadata::read_from_prefix(&metadata_bytes)
                 .map_err(|_| ErrorCode::Fail)?;
@@ -363,7 +354,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         Err(ErrorCode::Fail)
     }
 
-    async fn process_caliptra_fw(
+    fn process_caliptra_fw(
         &mut self,
         image_offset: usize,
         image_len: usize,
@@ -383,7 +374,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let result = self
                 .mailbox
                 .execute_with_payload_stream(cmd, None, &mut payload_stream, response_buffer)
-                .await;
+                ;
             match result {
                 Ok(_) => break,
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -399,7 +390,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
         Ok(())
     }
-    async fn update_caliptra(&mut self, flash_header: &FlashHeader) -> Result<(), ErrorCode> {
+    fn update_caliptra(&mut self, flash_header: &FlashHeader) -> Result<(), ErrorCode> {
         writeln!(
             Console::<DefaultSyscalls>::writer(),
             "[FW Upd] Updating Caliptra"
@@ -411,15 +402,15 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 flash_header.image_headers_offset as usize,
                 CALIPTRA_FMC_RT_IDENTIFIER,
             )
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
 
         self.process_caliptra_fw(image_offset, image_len, CaliptraFwAction::Load)
-            .await?;
-        self.wait_caliptra_rt_execution().await
+            ?;
+        self.wait_caliptra_rt_execution()
     }
 
-    async fn verify_manifest(&mut self, offset: usize, len: usize) -> Result<(), ErrorCode> {
+    fn verify_manifest(&mut self, offset: usize, len: usize) -> Result<(), ErrorCode> {
         let mut req = AuthManifestReqHeader {
             chksum: 0,
             manifest_size: len as u32,
@@ -428,7 +419,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         let mut payload_stream = MailboxPayloadStream::new(self.staging_memory, offset, len);
 
         // Calculate the mailbox checksum
-        let mut checksum = payload_stream.get_bytesum().await;
+        let mut checksum = payload_stream.get_bytesum();
         for b in CommandId::VERIFY_AUTH_MANIFEST.0.to_le_bytes().iter() {
             checksum = checksum.wrapping_add(u32::from(*b));
         }
@@ -448,7 +439,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                     &mut payload_stream,
                     response_buffer,
                 )
-                .await;
+                ;
             match result {
                 Ok(_) => return Ok(()),
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -457,7 +448,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
     }
 
-    async fn get_dma_image_staging_address(&self, image_id: u32) -> Result<AXIAddr, ErrorCode> {
+    fn get_dma_image_staging_address(&self, image_id: u32) -> Result<AXIAddr, ErrorCode> {
         let mut req = GetImageInfoReq {
             hdr: MailboxReqHeader::default(),
             fw_id: image_id.to_le_bytes(),
@@ -473,7 +464,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let result = self
                 .mailbox
                 .execute(GetImageInfoReq::ID.0, req_data, response_buffer)
-                .await;
+                ;
             match result {
                 Ok(_) => break,
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -491,7 +482,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
     }
 
-    pub async fn copy_to_memory(
+    pub fn copy_to_memory(
         &self,
         mem_address: AXIAddr,
         offset: usize,
@@ -507,7 +498,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let mut buffer = [0; MAX_DMA_TRANSFER_SIZE];
             self.staging_memory
                 .read(current_offset, &mut buffer[..transfer_size])
-                .await?;
+                ?;
 
             let source_address = self
                 .dma_mapping
@@ -517,7 +508,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 source: DMASource::Address(source_address),
                 dest_addr: current_address,
             };
-            dma_syscall.xfer(&transaction).await?;
+            dma_syscall.xfer(&transaction)?;
             remaining_size -= transfer_size;
             current_offset += transfer_size;
             current_address += transfer_size as u64;
@@ -526,7 +517,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         Ok(())
     }
 
-    async fn verify_mcu_or_soc_image(
+    fn verify_mcu_or_soc_image(
         &mut self,
         image_offset: usize,
         len: usize,
@@ -535,7 +526,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         let mut hasher = HashContext::new();
         hasher
             .init(HashAlgoType::SHA384, None)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         let mut buffer = [0u8; MAX_CRYPTO_MBOX_DATA_SIZE / 2]; // Size decreased to avoid stack overflow
         let mut hash = [0u8; 48]; // SHA-384 produces a 48-byte hash
@@ -547,18 +538,18 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                     image_offset + total_bytes_read,
                     &mut buffer[..bytes_to_read],
                 )
-                .await
+                
                 .map_err(|_| ErrorCode::Fail)?;
             hasher
                 .update(&buffer[..bytes_to_read])
-                .await
+                
                 .map_err(|_| ErrorCode::Fail)?;
             total_bytes_read += bytes_to_read;
         }
 
         hasher
             .finalize(&mut hash)
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
 
         // Compare the computed hash with the expected hash from the metadata
@@ -569,7 +560,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         Ok(())
     }
 
-    async fn update_mcu(&mut self, flash_header: &FlashHeader) -> Result<(), ErrorCode> {
+    fn update_mcu(&mut self, flash_header: &FlashHeader) -> Result<(), ErrorCode> {
         writeln!(
             Console::<DefaultSyscalls>::writer(),
             "[FW Upd] Updating MCU"
@@ -581,17 +572,17 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
                 flash_header.image_headers_offset as usize,
                 MCU_RT_IDENTIFIER,
             )
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
 
         // Get the DMA staging address for the MCU
         let staging_address = self
             .get_dma_image_staging_address(MCU_RT_IDENTIFIER)
-            .await?;
+            ?;
 
         // Copy the firmware image to the MCU DMA staging area
         self.copy_to_memory(staging_address, mcu_image_offset, mcu_image_len)
-            .await?;
+            ?;
 
         let mut req = ActivateFirmwareReq {
             hdr: MailboxReqHeader { chksum: 0 },
@@ -615,7 +606,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let result = self
                 .mailbox
                 .execute(CommandId::ACTIVATE_FIRMWARE.into(), req, response_buffer)
-                .await;
+                ;
             match result {
                 Ok(_) => return Ok(()),
                 Err(MailboxError::ErrorCode(ErrorCode::Busy)) => continue,
@@ -624,7 +615,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
         }
     }
 
-    async fn wait_caliptra_rt_execution(&mut self) -> Result<(), ErrorCode> {
+    fn wait_caliptra_rt_execution(&mut self) -> Result<(), ErrorCode> {
         let mut req = MailboxReqHeader { chksum: 0 };
         let req_data = req.as_mut_bytes();
         self.mailbox
@@ -639,7 +630,7 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
             let result = self
                 .mailbox
                 .execute(CommandId::FW_INFO.into(), req_data, response_buffer)
-                .await;
+                ;
             match result {
                 Ok(_) => break,
                 Err(_) => continue,
@@ -650,16 +641,10 @@ impl<'a, D: DMAMapping> FirmwareUpdater<'a, D> {
     }
 }
 
-pub struct PldmInstance<'a> {
-    pub pldm_service: Option<PldmService<'a>>,
-    pub executor: TockExecutor,
-}
-
-#[async_trait]
 pub trait StagingMemory: core::fmt::Debug + Send + Sync {
-    async fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode>;
-    async fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode>;
-    async fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode>;
+    fn write(&self, offset: usize, data: &[u8]) -> Result<(), ErrorCode>;
+    fn read(&self, offset: usize, data: &mut [u8]) -> Result<(), ErrorCode>;
+    fn image_valid(&self, img_sz: usize) -> Result<(), ErrorCode>;
     fn size(&self) -> usize;
 }
 
@@ -687,11 +672,11 @@ impl MailboxPayloadStream {
         // Reset the cursor to the starting offset
         self.cursor = self.offset;
     }
-    pub async fn get_bytesum(&mut self) -> u32 {
+    pub fn get_bytesum(&mut self) -> u32 {
         self.reset();
         let mut sum = 0u32;
         let mut buffer = [0u8; 256];
-        while let Ok(bytes_read) = self.read(&mut buffer).await {
+        while let Ok(bytes_read) = self.read(&mut buffer) {
             if bytes_read == 0 {
                 break; // No more data to read
             }
@@ -704,13 +689,12 @@ impl MailboxPayloadStream {
     }
 }
 
-#[async_trait(?Send)]
 impl PayloadStream for MailboxPayloadStream {
     fn size(&self) -> usize {
         self.len
     }
 
-    async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode> {
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, ErrorCode> {
         if (self.cursor - self.offset) >= self.len {
             return Ok(0); // No more data to read
         }
@@ -718,7 +702,7 @@ impl PayloadStream for MailboxPayloadStream {
         let bytes_to_read = (self.len - (self.cursor - self.offset)).min(buffer.len());
         self.staging_memory
             .read(self.cursor, buffer[..bytes_to_read].as_mut())
-            .await
+            
             .map_err(|_| ErrorCode::Fail)?;
         self.cursor += bytes_to_read;
         Ok(bytes_to_read)

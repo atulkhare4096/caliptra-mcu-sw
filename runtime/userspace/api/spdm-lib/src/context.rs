@@ -1,7 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-extern crate alloc;
-
 use crate::cert_store::*;
 use crate::chunk_ctx::{LargeMessageCtx, LargeMsgBufProvider};
 use crate::codec::{encode_u8_slice, Codec, MessageBuf};
@@ -12,7 +10,7 @@ use crate::commands::{
     measurements_rsp, vendor_defined_rsp, version_rsp,
 };
 use crate::error::*;
-use crate::measurements::{SpdmMeasurementValue, SpdmMeasurements};
+use crate::measurements::SpdmMeasurements;
 use crate::protocol::algorithms::*;
 use crate::protocol::common::{ReqRespCode, SpdmMsgHdr};
 use crate::protocol::version::*;
@@ -22,6 +20,7 @@ use crate::state::{ConnectionState, State};
 use crate::transcript::{Transcript, TranscriptContext};
 use crate::transport::common::SpdmTransport;
 use crate::vdm_handler::VdmHandler;
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use caliptra_mcu_libapi_caliptra::crypto::aes_gcm::Aes256GcmTag;
 use caliptra_mcu_libapi_caliptra::crypto::asym::*;
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
@@ -30,51 +29,31 @@ use core::mem::size_of;
 // Maximum SPDM responder buffer size
 pub const MAX_SPDM_RESPONDER_BUF_SIZE: usize = 1024;
 
-/// Trait that bundles the platform-specific types used by `SpdmContext`.
-///
-/// Instead of carrying three independent generic type parameters everywhere,
-/// a single `P: SpdmProvider` is used. Platform code implements this trait
-/// once per transport variant, e.g.:
-///
-/// ```ignore
-/// struct MctpPlatform;
-/// impl SpdmProvider for MctpPlatform {
-///     type Transport = MctpTransport;
-///     type CertStore = DeviceCertStore;
-///     type Measurements = OcpEatMeasurements;
-/// }
-/// ```
-pub trait SpdmProvider {
-    type Transport: SpdmTransport;
-    type CertStore: SpdmCertStore;
-    type Measurements: SpdmMeasurementValue;
-}
-
-pub struct SpdmContext<'a, P: SpdmProvider> {
-    transport: &'a mut P::Transport,
+pub struct SpdmContext<'a> {
+    transport: &'a mut dyn SpdmTransport,
     pub(crate) supported_versions: &'a [SpdmVersion],
     pub(crate) supported_secure_versions: &'a [SpdmVersion],
     pub(crate) state: State,
     pub(crate) shared_transcript: Transcript,
     pub(crate) local_capabilities: DeviceCapabilities,
     pub(crate) local_algorithms: LocalDeviceAlgorithms<'a>,
-    pub(crate) device_certs_store: &'a P::CertStore,
-    pub(crate) measurements: SpdmMeasurements<'a, P::Measurements>,
+    pub(crate) device_certs_store: &'a dyn SpdmCertStore,
+    pub(crate) measurements: SpdmMeasurements<'a>,
     pub(crate) large_msg_ctx: LargeMessageCtx<'a>,
     pub(crate) session_mgr: SessionManager,
     pub(crate) vdm_handlers: Option<&'a mut [&'a mut dyn VdmHandler]>,
 }
 
-impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
+impl<'a> SpdmContext<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         supported_versions: &'a [SpdmVersion],
         supported_secure_versions: &'a [SpdmVersion],
-        spdm_transport: &'a mut P::Transport,
+        spdm_transport: &'a mut dyn SpdmTransport,
         local_capabilities: DeviceCapabilities,
         local_algorithms: LocalDeviceAlgorithms<'a>,
-        device_certs_store: &'a P::CertStore,
-        measurements: SpdmMeasurements<'a, P::Measurements>,
+        device_certs_store: &'a dyn SpdmCertStore,
+        measurements: SpdmMeasurements<'a>,
         vdm_handlers: Option<&'a mut [&'a mut dyn VdmHandler]>,
         large_msg_buf_provider: &'a dyn LargeMsgBufProvider,
     ) -> SpdmResult<Self> {
@@ -98,13 +77,51 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         })
     }
 
-    pub async fn process_message(&mut self, msg_buf: &mut MessageBuf<'a>) -> SpdmResult<()> {
+    pub fn process_message(&mut self, msg_buf: &mut MessageBuf<'a>) -> SpdmResult<()> {
         let secure = self
             .transport
             .receive_request(msg_buf)
-            .await
+            
             .map_err(SpdmError::Transport)?;
 
+        self.handle_received_message(msg_buf, secure)
+    }
+
+    /// Non-blocking poll: check for a pending message and handle it if ready.
+    ///
+    /// `nb_buf` must be the buffer passed to `MctpTransport::setup_non_blocking()`.
+    /// `notify` must be the notification passed to `setup_non_blocking()`.
+    ///
+    /// Returns `Ok(true)` if a message was handled, `Ok(false)` if nothing
+    /// was ready, or `Err` on processing failure.
+    pub fn try_process_message(
+        &mut self,
+        msg_buf: &mut MessageBuf<'a>,
+        nb_buf: &[u8],
+        notify: &UpcallNotification,
+    ) -> SpdmResult<bool> {
+        if !notify.is_ready() {
+            return Ok(false);
+        }
+        let args = notify.args();
+        let secure = self
+            .transport
+            .receive_from_buffer(msg_buf, nb_buf, args)
+            .map_err(SpdmError::Transport)?;
+        self.handle_received_message(msg_buf, secure)?;
+        notify.clear();
+        self.transport
+            .rearm_receive()
+            .map_err(SpdmError::Transport)?;
+        Ok(true)
+    }
+
+    /// Process a message that has already been received into `msg_buf`.
+    fn handle_received_message(
+        &mut self,
+        msg_buf: &mut MessageBuf<'a>,
+        secure: bool,
+    ) -> SpdmResult<()> {
         // Reset active session_id
         self.session_mgr.reset_active_session_id();
 
@@ -114,7 +131,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
             let app_data_len = self
                 .session_mgr
                 .decode_secure_message(self.transport, msg_buf, &mut app_data)
-                .await
+                
                 .map_err(SpdmError::Session)?;
 
             // Replace msg_buf contents with the decrypted application data
@@ -126,14 +143,14 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         }
 
         // Process message
-        match self.handle_request(msg_buf).await {
+        match self.handle_request(msg_buf) {
             Ok(()) => {
-                alloc::boxed::Box::pin(self.send_response(msg_buf, secure)).await?;
+                self.send_response(msg_buf, secure)?;
             }
             Err((rsp, command_error)) => {
                 if rsp {
-                    alloc::boxed::Box::pin(self.send_response(msg_buf, secure))
-                        .await
+                    self.send_response(msg_buf, secure)
+                        
                         .inspect_err(|_| {})?;
                 }
                 // Release buffer on error if no chunking is in progress
@@ -148,15 +165,15 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         Ok(())
     }
 
-    async fn handle_request(&mut self, buf: &mut MessageBuf<'a>) -> CommandResult<()> {
+    fn handle_request(&mut self, buf: &mut MessageBuf<'a>) -> CommandResult<()> {
         let (req_msg_header, req_code) = self.decode_and_validate_request(buf)?;
 
         if req_code == ReqRespCode::ChunkSend {
-            chunk_send_ack_rsp::handle_chunk_send(self, req_msg_header, buf).await?;
+            chunk_send_ack_rsp::handle_chunk_send(self, req_msg_header, buf)?;
             return Ok(());
         }
 
-        self.dispatch_request(req_msg_header, req_code, buf).await
+        self.dispatch_request(req_msg_header, req_code, buf)
     }
 
     /// Handle a fully reassembled large request (from CHUNK_SEND).
@@ -164,7 +181,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
     /// Detaches the large message buffer, creates a request MessageBuf from it,
     /// dispatches to the appropriate handler, and writes the response into `rsp`.
     /// The caller must have already reserved space for the CHUNK_SEND_ACK header in `rsp`.
-    pub(crate) async fn handle_large_request_payload(
+    pub(crate) fn handle_large_request_payload(
         &mut self,
         rsp: &mut MessageBuf<'a>,
     ) -> CommandResult<()> {
@@ -203,7 +220,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
 
         let result = self
             .dispatch_large_request(req_msg_header, req_code, &mut req, rsp)
-            .await;
+            ;
 
         let buf = req.into_inner();
         self.large_msg_ctx.replace_buf(buf);
@@ -216,7 +233,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
     /// Commands with dedicated large-request handlers read from `req` and write
     /// their response directly into `rsp`. When a command gains large-request
     /// support (e.g. SET_CERTIFICATE, VDM), add it as a match arm here.
-    async fn dispatch_large_request(
+    fn dispatch_large_request(
         &mut self,
         _req_msg_header: SpdmMsgHdr,
         _req_code: ReqRespCode,
@@ -258,7 +275,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         Ok((req_msg_header, req_code))
     }
 
-    async fn dispatch_request(
+    fn dispatch_request(
         &mut self,
         req_msg_header: SpdmMsgHdr,
         req_code: ReqRespCode,
@@ -283,9 +300,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         }
 
         match req_code {
-            ReqRespCode::GetVersion => {
-                version_rsp::handle_get_version(self, req_msg_header, req)?
-            }
+            ReqRespCode::GetVersion => version_rsp::handle_get_version(self, req_msg_header, req)?,
             ReqRespCode::GetCapabilities => {
                 capabilities_rsp::handle_get_capabilities(self, req_msg_header, req)?
             }
@@ -293,70 +308,36 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
                 algorithms_rsp::handle_negotiate_algorithms(self, req_msg_header, req)?
             }
             ReqRespCode::GetDigests => {
-                alloc::boxed::Box::pin(digests_rsp::handle_get_digests(self, req_msg_header, req))
-                    .await?
+                digests_rsp::handle_get_digests(self, req_msg_header, req)?
             }
             ReqRespCode::GetCertificate => {
-                alloc::boxed::Box::pin(certificate_rsp::handle_get_certificate(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                certificate_rsp::handle_get_certificate(self, req_msg_header, req)?
             }
             ReqRespCode::Challenge => {
-                alloc::boxed::Box::pin(challenge_auth_rsp::handle_challenge(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                challenge_auth_rsp::handle_challenge(self, req_msg_header, req)?
             }
             ReqRespCode::GetMeasurements => {
-                alloc::boxed::Box::pin(measurements_rsp::handle_get_measurements(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                measurements_rsp::handle_get_measurements(self, req_msg_header, req)?
             }
             ReqRespCode::ChunkGet => {
-                alloc::boxed::Box::pin(chunk_get_rsp::handle_chunk_get(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                chunk_get_rsp::handle_chunk_get(self, req_msg_header, req)?
             }
             ReqRespCode::KeyExchange => {
-                alloc::boxed::Box::pin(key_exchange_rsp::handle_key_exchange(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                key_exchange_rsp::handle_key_exchange(self, req_msg_header, req)?
             }
-            ReqRespCode::Finish => {
-                alloc::boxed::Box::pin(finish_rsp::handle_finish(self, req_msg_header, req))
-                    .await?
-            }
+            ReqRespCode::Finish => finish_rsp::handle_finish(self, req_msg_header, req)?,
             ReqRespCode::EndSession => {
                 end_session_ack_rsp::handle_end_session(self, req_msg_header, req)?
             }
             ReqRespCode::VendorDefinedRequest => {
-                alloc::boxed::Box::pin(vendor_defined_rsp::handle_vendor_defined_request(
-                    self,
-                    req_msg_header,
-                    req,
-                ))
-                .await?
+                vendor_defined_rsp::handle_vendor_defined_request(self, req_msg_header, req)?
             }
             _ => Err((false, CommandError::UnsupportedRequest))?,
         }
         Ok(())
     }
 
-    async fn send_response(&mut self, resp: &mut MessageBuf<'a>, secure: bool) -> SpdmResult<()> {
+    fn send_response(&mut self, resp: &mut MessageBuf<'a>, secure: bool) -> SpdmResult<()> {
         if secure {
             let mut secure_message = [0u8; MAX_SPDM_RESPONDER_BUF_SIZE];
             let mut secure_message_buf = MessageBuf::new(&mut secure_message);
@@ -367,17 +348,17 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
                 .map_err(|_| SpdmError::BufferTooSmall)?;
             self.session_mgr
                 .encode_secure_message(self.transport, app_data, &mut secure_message_buf)
-                .await
+                
                 .map_err(SpdmError::Session)?;
             self.transport
                 .send_response(&mut secure_message_buf, secure)
-                .await
+                
                 .map_err(SpdmError::Transport)
         } else {
             // Send response without encryption
             self.transport
                 .send_response(resp, secure)
-                .await
+                
                 .map_err(SpdmError::Transport)
         }
     }
@@ -479,25 +460,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
         }
     }
 
-    /// Synchronous variant of `append_message_to_transcript` for transcript
-    /// contexts that don't require async (Vca, Digests).
-    pub(crate) fn append_message_to_transcript_sync(
-        &mut self,
-        msg_buf: &mut MessageBuf<'_>,
-        transcript_context: TranscriptContext,
-    ) -> CommandResult<()> {
-        let data_offset = msg_buf.data_offset();
-
-        let msg = msg_buf
-            .message_slice(data_offset)
-            .map_err(|e| (false, CommandError::Codec(e)))?;
-
-        self.shared_transcript
-            .append_sync(transcript_context, msg)
-            .map_err(|e| (false, CommandError::Transcript(e)))
-    }
-
-    pub(crate) async fn append_message_to_transcript(
+    pub(crate) fn append_message_to_transcript(
         &mut self,
         msg_buf: &mut MessageBuf<'_>,
         transcript_context: TranscriptContext,
@@ -510,10 +473,24 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
             .map_err(|e| (false, CommandError::Codec(e)))?;
 
         self.append_slice_to_transcript(msg, transcript_context, session_id)
-            .await
+            
     }
 
-    pub(crate) async fn append_slice_to_transcript(
+    /// Synchronous VCA transcript append — no mailbox call needed.
+    pub(crate) fn append_message_to_vca_transcript(
+        &mut self,
+        msg_buf: &mut MessageBuf<'_>,
+    ) -> CommandResult<()> {
+        let data_offset = msg_buf.data_offset();
+        let msg = msg_buf
+            .message_slice(data_offset)
+            .map_err(|e| (false, CommandError::Codec(e)))?;
+        self.shared_transcript
+            .append_vca(msg)
+            .map_err(|e| (false, CommandError::Transcript(e)))
+    }
+
+    pub(crate) fn append_slice_to_transcript(
         &mut self,
         data: &[u8],
         transcript_context: TranscriptContext,
@@ -531,11 +508,11 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
 
         self.shared_transcript
             .append(transcript_context, session_info, data)
-            .await
+            
             .map_err(|e| (false, CommandError::Transcript(e)))
     }
 
-    pub(crate) async fn transcript_hash(
+    pub(crate) fn transcript_hash(
         &mut self,
         transcript_context: TranscriptContext,
         session_id: Option<u32>,
@@ -559,7 +536,7 @@ impl<'a, P: SpdmProvider> SpdmContext<'a, P> {
                 &mut transcript_hash,
                 finish_hash,
             )
-            .await
+            
             .map_err(|e| (false, CommandError::Transcript(e)))?;
 
         Ok(transcript_hash)

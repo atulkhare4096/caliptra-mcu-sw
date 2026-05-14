@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_common_commands::{
     CaliptraCmdHandler, CaliptraCmdResult, CaliptraCompletionCode, DeviceCapabilities, DeviceId,
     DeviceInfo, FirmwareVersion, Uid, MAX_FW_VERSION_LEN, MAX_UID_LEN,
@@ -21,9 +20,8 @@ pub struct NonCryptoCmdHandlerMock;
 /// This handler provides mock responses for firmware version queries,
 /// device ID, device information, and device capabilities. Intended to use for
 /// integration testing on the emulator platform.
-#[async_trait]
 impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
-    async fn get_firmware_version(
+    fn get_firmware_version(
         &self,
         index: u32,
         version: &mut FirmwareVersion,
@@ -45,7 +43,7 @@ impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
         Ok(())
     }
 
-    async fn get_device_id(&self, device_id: &mut DeviceId) -> CaliptraCmdResult<()> {
+    fn get_device_id(&self, device_id: &mut DeviceId) -> CaliptraCmdResult<()> {
         let test_device_id = &config::TEST_DEVICE_ID;
         device_id.vendor_id = test_device_id.vendor_id;
         device_id.device_id = test_device_id.device_id;
@@ -54,7 +52,7 @@ impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
         Ok(())
     }
 
-    async fn get_device_info(&self, index: u32, info: &mut DeviceInfo) -> CaliptraCmdResult<()> {
+    fn get_device_info(&self, index: u32, info: &mut DeviceInfo) -> CaliptraCmdResult<()> {
         match index {
             0 => {
                 let test_uid = &config::TEST_UID;
@@ -74,7 +72,7 @@ impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
         }
     }
 
-    async fn get_device_capabilities(
+    fn get_device_capabilities(
         &self,
         capabilities: &mut DeviceCapabilities,
     ) -> CaliptraCmdResult<()> {
@@ -88,7 +86,7 @@ impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
         Ok(())
     }
 
-    async fn export_attested_csr(
+    fn export_attested_csr(
         &self,
         device_key_id: u32,
         algorithm: u32,
@@ -99,16 +97,16 @@ impl CaliptraCmdHandler for NonCryptoCmdHandlerMock {
         let handler = CaliptraCmdBackend;
         handler
             .export_attested_csr(device_key_id, algorithm, nonce, csr_buf)
-            .await
+            
     }
 
-    async fn export_idevid_csr(
+    fn export_idevid_csr(
         &self,
         algorithm: u32,
         csr_buf: &mut [u8],
     ) -> CaliptraCmdResult<usize> {
         // Delegate to real CaliptraCmdBackend for actual Caliptra mailbox interaction
         let handler = CaliptraCmdBackend;
-        handler.export_idevid_csr(algorithm, csr_buf).await
+        handler.export_idevid_csr(algorithm, csr_buf)
     }
 }

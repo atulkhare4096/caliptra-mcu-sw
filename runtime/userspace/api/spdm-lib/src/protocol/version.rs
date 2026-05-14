@@ -5,7 +5,7 @@ use crate::error::{SpdmError, SpdmResult};
 const MAX_NUM_SUPPORTED_SPDM_VERSIONS: usize = 4;
 const MAX_SUPPORTED_VERSION: SpdmVersion = SpdmVersion::V13;
 
-#[derive(Default, PartialEq, Clone, Copy, PartialOrd)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, PartialOrd)]
 pub enum SpdmVersion {
     #[default]
     V10,

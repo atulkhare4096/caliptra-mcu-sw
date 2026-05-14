@@ -70,19 +70,17 @@ fn main() {
 }
 
 #[cfg(target_arch = "riscv32")]
-#[embassy_executor::task]
-async fn start() {
-    async_main::<caliptra_mcu_libtock_runtime::TockSyscalls>().await;
+fn start() {
+    async_main::<caliptra_mcu_libtock_runtime::TockSyscalls>();
 }
 
 #[cfg(not(target_arch = "riscv32"))]
-#[embassy_executor::task]
-async fn start() {
-    async_main::<caliptra_mcu_libtock_unittest::fake::Syscalls>().await;
+fn start() {
+    async_main::<caliptra_mcu_libtock_unittest::fake::Syscalls>();
 }
 
 #[allow(unreachable_code)]
-pub(crate) async fn async_main<S: Syscalls>() {
+pub(crate) fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(
         console_writer,
@@ -104,7 +102,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
 
     for _ in 0..5 {
         writeln!(console_writer, "Sleeping for 1 millisecond").unwrap();
-        sleep::<S>(Milliseconds(1)).await;
+        sleep::<S>(Milliseconds(1));
         writeln!(console_writer, "async sleeper woke").unwrap();
     }
 
@@ -116,7 +114,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
         )
         .unwrap();
 
-        test_mctp_loopback().await;
+        test_mctp_loopback();
     }
 
     #[cfg(feature = "test-doe-user-loopback")]
@@ -128,7 +126,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
         .unwrap();
 
         // This test is not implemented yet.
-        test_doe_loopback::test_doe_loopback().await;
+        test_doe_loopback::test_doe_loopback();
     }
 
     #[cfg(feature = "test-flash-usermode")]
@@ -138,79 +136,79 @@ pub(crate) async fn async_main<S: Syscalls>() {
             "Running IO test on emulator flash partitions"
         )
         .unwrap();
-        test_flash_io::test_flash_usermode_emulator().await;
+        test_flash_io::test_flash_usermode_emulator();
         System::exit(0);
     }
     #[cfg(feature = "test-pldm-request-response")]
     {
-        test_pldm_request_response::test::test_pldm_request_response().await;
+        test_pldm_request_response::test::test_pldm_request_response();
     }
     #[cfg(feature = "test-caliptra-mailbox")]
     {
-        test_caliptra_mailbox::test_caliptra_mailbox().await;
-        test_caliptra_mailbox::test_caliptra_mailbox_bad_command().await;
-        test_caliptra_mailbox::test_caliptra_mailbox_fail().await;
+        test_caliptra_mailbox::test_caliptra_mailbox();
+        test_caliptra_mailbox::test_caliptra_mailbox_bad_command();
+        test_caliptra_mailbox::test_caliptra_mailbox_fail();
         System::exit(0);
     }
 
     #[cfg(feature = "test-get-device-state")]
     {
-        test_get_device_state::test_get_pcr_quote().await;
-        test_get_device_state::test_get_pcrs().await;
-        test_get_device_state::test_get_fw_info().await;
-        test_get_device_state::test_get_image_info().await;
-        test_get_device_state::test_get_fw_version().await;
+        test_get_device_state::test_get_pcr_quote();
+        test_get_device_state::test_get_pcrs();
+        test_get_device_state::test_get_fw_info();
+        test_get_device_state::test_get_image_info();
+        test_get_device_state::test_get_fw_version();
         System::exit(0);
     }
 
     #[cfg(feature = "test-caliptra-crypto")]
     {
-        test_caliptra_crypto::test_caliptra_sha().await;
-        test_caliptra_crypto::test_caliptra_rng().await;
-        test_caliptra_crypto::test_caliptra_ecdh().await;
-        test_caliptra_crypto::test_caliptra_hmac().await;
-        test_caliptra_crypto::test_caliptra_aes_gcm_cipher().await;
-        test_caliptra_crypto::test_caliptra_ecdsa().await;
+        test_caliptra_crypto::test_caliptra_sha();
+        test_caliptra_crypto::test_caliptra_rng();
+        test_caliptra_crypto::test_caliptra_ecdh();
+        test_caliptra_crypto::test_caliptra_hmac();
+        test_caliptra_crypto::test_caliptra_aes_gcm_cipher();
+        test_caliptra_crypto::test_caliptra_ecdsa();
         System::exit(0);
     }
 
     #[cfg(feature = "test-caliptra-certs")]
     {
-        // test_caliptra_certs::test_get_idev_csr().await;
-        test_caliptra_certs::test_populate_idev_ecc384_cert().await;
-        test_caliptra_certs::test_get_ldev_ecc384_cert().await;
-        test_caliptra_certs::test_get_fmc_alias_ecc384cert().await;
-        test_caliptra_certs::test_get_rt_alias_ecc384cert().await;
-        test_caliptra_certs::test_get_cert_chain().await;
-        test_caliptra_certs::test_certify_key().await;
-        test_caliptra_certs::test_sign_with_test_key().await;
-        test_caliptra_certs::test_get_attested_csr().await;
+        // test_caliptra_certs::test_get_idev_csr();
+        test_caliptra_certs::test_populate_idev_ecc384_cert();
+        test_caliptra_certs::test_get_ldev_ecc384_cert();
+        test_caliptra_certs::test_get_fmc_alias_ecc384cert();
+        test_caliptra_certs::test_get_rt_alias_ecc384cert();
+        test_caliptra_certs::test_get_cert_chain();
+        test_caliptra_certs::test_certify_key();
+        test_caliptra_certs::test_sign_with_test_key();
+        test_caliptra_certs::test_get_attested_csr();
         System::exit(0);
     }
     #[cfg(feature = "test-dma")]
     {
-        test_dma::test_dma_xfer_local_to_local().await;
-        test_dma::test_dma_xfer_local_to_external().await;
+        test_dma::test_dma_xfer_local_to_local();
+        test_dma::test_dma_xfer_local_to_external();
         System::exit(0);
     }
 
     #[cfg(feature = "test-log-flash-usermode")]
     {
-        test_logging_flash::test_logging_flash_simple().await;
-        test_logging_flash::test_logging_flash_various_entries().await;
-        test_logging_flash::test_logging_flash_invalid_inputs().await;
+        test_logging_flash::test_logging_flash_simple();
+        test_logging_flash::test_logging_flash_various_entries();
+        test_logging_flash::test_logging_flash_invalid_inputs();
         System::exit(0);
     }
     #[cfg(feature = "test-mci")]
     {
-        test_mci::test_mci_read_write().await;
+        test_mci::test_mci_read_write();
         System::exit(0);
     }
 
     #[cfg(feature = "test-mcu-mbox-usermode")]
     {
         writeln!(console_writer, "Running MCU mailbox usermode loopback test").unwrap();
-        test_mcu_mbox_usermode::test_mcu_mbox_usermode_loopback().await;
+        test_mcu_mbox_usermode::test_mcu_mbox_usermode_loopback();
     }
     #[cfg(any(feature = "test-mcu-svn-gt-fuse", feature = "test-mcu-svn-lt-fuse"))]
     {
@@ -220,12 +218,12 @@ pub(crate) async fn async_main<S: Syscalls>() {
     #[cfg(feature = "test-mbox-sram")]
     {
         writeln!(console_writer, "Running MEM-REG read/write test").unwrap();
-        test_mbox_sram::test_mem_reg_read_write().await;
+        test_mbox_sram::test_mem_reg_read_write();
         System::exit(0);
     }
     #[cfg(feature = "test-warm-reset")]
     {
-        test_mci::test_mci_fw_boot_reset().await;
+        test_mci::test_mci_fw_boot_reset();
         System::exit(0);
     }
 
@@ -236,7 +234,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
             "Running IO test on FPGA flash staging partition"
         )
         .unwrap();
-        test_flash_io::test_flash_usermode_fpga().await;
+        test_flash_io::test_flash_usermode_fpga();
         writeln!(
             console_writer,
             "IO test on FPGA flash staging partition succeeded"
@@ -247,7 +245,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
 }
 
 #[allow(dead_code)]
-async fn test_mctp_loopback() {
+fn test_mctp_loopback() {
     use caliptra_mcu_libsyscall_caliptra::mctp::{driver_num, Mctp};
     let mctp_caliptra: Mctp = Mctp::new(driver_num::MCTP_CALIPTRA);
     loop {
@@ -258,7 +256,7 @@ async fn test_mctp_loopback() {
         assert!(max_msg_size.is_ok());
         assert!(max_msg_size.unwrap() > 0);
 
-        let result = mctp_caliptra.receive_request(&mut msg_buffer).await;
+        let result = mctp_caliptra.receive_request(&mut msg_buffer);
         assert!(result.is_ok());
         let (msg_len, msg_info) = result.unwrap();
         let msg_len = msg_len as usize;
@@ -266,7 +264,7 @@ async fn test_mctp_loopback() {
 
         let result = mctp_caliptra
             .send_response(&msg_buffer[..msg_len], msg_info)
-            .await;
+            ;
         assert!(result.is_ok());
     }
 }
@@ -294,8 +292,8 @@ mod subscribe {
     pub const CALLBACK: u32 = 0;
 }
 
-pub(crate) async fn sleep<S: Syscalls>(time: Milliseconds) {
-    let x = AsyncAlarm::<S>::sleep_for(time).await;
+pub(crate) fn sleep<S: Syscalls>(time: Milliseconds) {
+    let x = AsyncAlarm::<S>::sleep_for(time);
     writeln!(Console::<S>::writer(), "Async sleep done {:?}", x).unwrap();
 }
 
@@ -328,7 +326,7 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
         Ok(ticks.saturating_div(freq / 1000))
     }
 
-    pub async fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
+    pub fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
         let freq = Self::get_frequency()?;
         let ticks = time.to_ticks(freq).0;
         writeln!(Console::<S>::writer(), "Sleeping for {} ticks", ticks).unwrap();
@@ -336,7 +334,7 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
         S::command(DRIVER_NUM, command::SET_RELATIVE, ticks, 0)
             .to_result()
             .map(|_when: u32| ())?;
-        sub.await.map(|_| ())
+        sub.map(|_| ())
     }
 }
 
@@ -364,16 +362,15 @@ mod test {
     static SLEEP_COUNTER: LazyLock<Mutex<AtomicU32>> =
         LazyLock::new(|| Mutex::new(AtomicU32::new(0)));
 
-    #[embassy_executor::task]
-    async fn run_sleep() {
-        sleep::<fake::Syscalls>(Milliseconds(1)).await;
+    fn run_sleep() {
+        sleep::<fake::Syscalls>(Milliseconds(1));
         SLEEP_COUNTER
             .lock()
             .unwrap()
             .fetch_add(1, Ordering::Relaxed);
         // ensure there is always an upcall scheduled
         loop {
-            sleep::<fake::Syscalls>(Milliseconds(1)).await;
+            sleep::<fake::Syscalls>(Milliseconds(1));
         }
     }
 

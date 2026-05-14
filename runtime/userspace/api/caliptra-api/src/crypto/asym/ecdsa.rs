@@ -11,7 +11,7 @@ use zerocopy::IntoBytes;
 pub struct Ecdsa;
 
 impl Ecdsa {
-    pub async fn ecdsa_verify(
+    pub fn ecdsa_verify(
         pub_key_x: [u8; ECC_P384_PARAM_X_SIZE],
         pub_key_y: [u8; ECC_P384_PARAM_Y_SIZE],
         signature: &[u8; ECC_P384_SIGNATURE_SIZE],
@@ -41,7 +41,7 @@ impl Ecdsa {
             req.as_mut_bytes(),
             rsp_bytes,
         )
-        .await?;
+        ?;
         Ok(())
     }
 }

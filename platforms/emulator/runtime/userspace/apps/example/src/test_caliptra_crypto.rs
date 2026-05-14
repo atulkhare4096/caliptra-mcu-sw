@@ -30,20 +30,20 @@ const EXPECTED_HASHES_512: [[u8; 64]; 1] = [[
     0x11, 0xd8, 0x0d, 0x6b, 0x05, 0x67, 0x77, 0xd8, 0x36, 0x13, 0x2f, 0x46, 0x9f, 0x6c, 0x68, 0xd3,
 ]];
 
-pub async fn test_caliptra_sha() {
+pub fn test_caliptra_sha() {
     println!("Starting Caliptra mailbox SHA test");
 
     let data1 = b"Hello from Caliptra! This is a test of the SHA algorithm.";
     let expected_sha_384 = EXPECTED_HASHES_384[0];
     let expected_sha_512 = EXPECTED_HASHES_512[0];
 
-    test_sha(data1, HashAlgoType::SHA384, &expected_sha_384).await;
-    test_sha(data1, HashAlgoType::SHA512, &expected_sha_512).await;
+    test_sha(data1, HashAlgoType::SHA384, &expected_sha_384);
+    test_sha(data1, HashAlgoType::SHA512, &expected_sha_512);
 
     println!("SHA test completed successfully");
 }
 
-async fn test_sha(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
+fn test_sha(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
     println!("Testing SHA algorithm: {:?}", algo);
 
     let hash_size = algo.hash_size();
@@ -51,17 +51,17 @@ async fn test_sha(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
 
     let mut hash = [0u8; 64];
 
-    let _ = hash_context.init(algo, None).await.map_err(|e| {
+    let _ = hash_context.init(algo, None).map_err(|e| {
         println!("Failed to initialize hash context with error: {:?}", e);
         test_exit(1);
     });
 
-    let _ = hash_context.update(&data).await.map_err(|e| {
+    let _ = hash_context.update(&data).map_err(|e| {
         println!("Failed to update hash context with error: {:?}", e);
         test_exit(1);
     });
 
-    let _ = hash_context.finalize(&mut hash).await.map_err(|e| {
+    let _ = hash_context.finalize(&mut hash).map_err(|e| {
         println!("Failed to finalize hash context with error: {:?}", e);
         test_exit(1);
     });
@@ -77,21 +77,21 @@ async fn test_sha(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
     println!("SHA test for {:?} passed", algo);
 }
 
-pub async fn test_caliptra_rng() {
+pub fn test_caliptra_rng() {
     println!("Starting Caliptra mailbox RNG test");
-    // test_add_random_stir().await;
-    test_generate_random_number().await;
+    // test_add_random_stir();
+    test_generate_random_number();
     println!("RNG test completed successfully");
 }
 
 #[allow(unused)]
-async fn test_add_random_stir() {
+fn test_add_random_stir() {
     println!("Testing RNG add stir");
 
     let random_stir = [1u8; MAX_RANDOM_STIR_SIZE];
 
     // Add random stir of max allowed size
-    let result = Rng::add_random_stir(&random_stir).await;
+    let result = Rng::add_random_stir(&random_stir);
 
     if result.is_err() {
         println!("Failed to add random stir: {:?}", result);
@@ -105,13 +105,13 @@ async fn test_add_random_stir() {
     );
 }
 
-async fn test_generate_random_number() {
+fn test_generate_random_number() {
     println!("Testing RNG");
 
     let mut random_number = [0u8; MAX_RANDOM_NUM_SIZE];
 
     // Generate random number of max allowed size
-    let result = Rng::generate_random_number(&mut random_number).await;
+    let result = Rng::generate_random_number(&mut random_number);
 
     if result.is_err() {
         println!("Failed to generate random number: {:?}", result);
@@ -125,7 +125,7 @@ async fn test_generate_random_number() {
     );
 
     // Generate random number of size 0
-    let result = Rng::generate_random_number(&mut []).await;
+    let result = Rng::generate_random_number(&mut []);
     if result.is_err() {
         println!("Failed to generate random number of size 0: {:?}", result);
         test_exit(1);
@@ -136,7 +136,7 @@ async fn test_generate_random_number() {
     random_number.fill(0);
 
     // Generate random number of size 1
-    let result = Rng::generate_random_number(&mut random_number[..1]).await;
+    let result = Rng::generate_random_number(&mut random_number[..1]);
     if result.is_err() {
         println!("Failed to generate random number of size 1: {:?}", result);
         test_exit(1);
@@ -148,7 +148,7 @@ async fn test_generate_random_number() {
 
     // Generate random number of size less than max size
     random_number.fill(0);
-    let result = Rng::generate_random_number(&mut random_number[..(MAX_RANDOM_NUM_SIZE - 1)]).await;
+    let result = Rng::generate_random_number(&mut random_number[..(MAX_RANDOM_NUM_SIZE - 1)]);
     if result.is_err() {
         println!("Failed to generate random number of size 31: {:?}", result);
         test_exit(1);
@@ -159,7 +159,7 @@ async fn test_generate_random_number() {
     );
     // Generate random number of size greater than max size
     let mut invalid_random_number = [0u8; MAX_RANDOM_NUM_SIZE + 1];
-    let result = Rng::generate_random_number(&mut invalid_random_number).await;
+    let result = Rng::generate_random_number(&mut invalid_random_number);
     if !result.is_err() {
         println!("Failed!!. Generate random number of size 33: {:?}", result);
         test_exit(1);
@@ -170,33 +170,33 @@ async fn test_generate_random_number() {
     );
 }
 
-pub async fn test_caliptra_ecdh() {
+pub fn test_caliptra_ecdh() {
     println!("Starting Caliptra mailbox ECDH test");
-    test_ecdh().await;
+    test_ecdh();
     println!("ECDH test completed successfully");
 }
 
-async fn test_ecdh() {
+fn test_ecdh() {
     println!("Testing ECDH");
 
-    let exch1 = Ecdh::ecdh_generate().await.unwrap_or_else(|e| {
+    let exch1 = Ecdh::ecdh_generate().unwrap_or_else(|e| {
         println!("Failed to generate ECDH exchange: {:?}", e);
         test_exit(1);
     });
-    let exch2 = Ecdh::ecdh_generate().await.unwrap_or_else(|e| {
+    let exch2 = Ecdh::ecdh_generate().unwrap_or_else(|e| {
         println!("Failed to generate ECDH exchange: {:?}", e);
         test_exit(1);
     });
 
     let finish = Ecdh::ecdh_finish(CmKeyUsage::Hmac, &exch1, &exch2.exchange_data)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to finish ECDH exchange: {:?}", e);
             test_exit(1);
         });
 
     let hmac = Hmac::hmac(&finish, &[1, 2, 3, 4])
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to compute HMAC: {:?}", e);
             test_exit(1);
@@ -208,25 +208,25 @@ async fn test_ecdh() {
     println!("ECDH test passed successfully");
 }
 
-pub async fn test_caliptra_hmac() {
+pub fn test_caliptra_hmac() {
     println!("Starting Caliptra mailbox HMAC test");
-    test_hmac().await;
+    test_hmac();
     println!("HMAC test completed successfully");
 }
 
-async fn test_hmac() {
+fn test_hmac() {
     println!("Testing HMAC");
 
     let num = [0u8; 48];
     let cmk = Import::import(CmKeyUsage::Hmac, &num)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to import key: {:?}", e);
             test_exit(1);
         })
         .cmk;
 
-    let hmac = Hmac::hmac(&cmk, &num).await.unwrap_or_else(|e| {
+    let hmac = Hmac::hmac(&cmk, &num).unwrap_or_else(|e| {
         println!("Failed to HMAC: {:?}", e);
         test_exit(1);
     });
@@ -248,19 +248,19 @@ async fn test_hmac() {
     }
 
     let extract = Hmac::hkdf_extract(HkdfSalt::Data(&num), &cmk)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to HKDF-Extract: {:?}", e);
             test_exit(1);
         });
 
     let expand = Hmac::hkdf_expand(&extract.prk, CmKeyUsage::Hmac, 48, &num)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to HKDF-Expand: {:?}", e);
             test_exit(1);
         });
-    let hmac = Hmac::hmac(&expand.okm, &num).await.unwrap_or_else(|e| {
+    let hmac = Hmac::hmac(&expand.okm, &num).unwrap_or_else(|e| {
         println!("Failed to HMAC: {:?}", e);
         test_exit(1);
     });
@@ -284,27 +284,27 @@ async fn test_hmac() {
     println!("HMAC test passed successfully");
 }
 
-pub async fn test_caliptra_aes_gcm_cipher() {
-    let derived_cmk = aes_gcm_keygen_ecdh().await;
-    let imported_cmk = aes_gcm_key_import().await;
+pub fn test_caliptra_aes_gcm_cipher() {
+    let derived_cmk = aes_gcm_keygen_ecdh();
+    let imported_cmk = aes_gcm_key_import();
     let plaintext = b"Caliptra: Secure silicon root of trust powering confidential computing!";
     let mut ciphertext_buf = [0u8; 128]; // Adjust size as needed
     let aad = &[];
 
     println!("Testing AES-GCM encryption and decryption");
-    test_aes_gcm_enc_dec(imported_cmk, aad, &plaintext[..], &mut ciphertext_buf[..]).await;
-    test_aes_gcm_enc_dec(derived_cmk, aad, &plaintext[..], &mut ciphertext_buf[..]).await;
+    test_aes_gcm_enc_dec(imported_cmk, aad, &plaintext[..], &mut ciphertext_buf[..]);
+    test_aes_gcm_enc_dec(derived_cmk, aad, &plaintext[..], &mut ciphertext_buf[..]);
     println!("Test AES-GCM encryption and decryption completed successfully");
     println!("Testing AES-GCM SPDM encryption and decryption");
-    test_caliptra_aes_gcm_spdm().await;
+    test_caliptra_aes_gcm_spdm();
     println!("Test AES-GCM SPDM encryption and decryption completed successfully");
 }
 
-async fn test_aes_gcm_enc_dec(cmk: Cmk, aad: &[u8], plaintext: &[u8], ciphertext: &mut [u8]) {
+fn test_aes_gcm_enc_dec(cmk: Cmk, aad: &[u8], plaintext: &[u8], ciphertext: &mut [u8]) {
     let mut aes_gcm = AesGcm::new();
     let (ciphertext_size, iv, tag) = aes_gcm
         .encrypt(cmk.clone(), aad, plaintext, &mut ciphertext[..])
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to encrypt data: {:?}", e);
             test_exit(1);
@@ -321,7 +321,7 @@ async fn test_aes_gcm_enc_dec(cmk: Cmk, aad: &[u8], plaintext: &[u8], ciphertext
             tag,
             &mut decrypted_plaintext[..],
         )
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to decrypt data: {:?}", e);
             test_exit(1);
@@ -334,18 +334,18 @@ async fn test_aes_gcm_enc_dec(cmk: Cmk, aad: &[u8], plaintext: &[u8], ciphertext
     );
 }
 
-async fn aes_gcm_keygen_ecdh() -> Cmk {
-    let exch1 = Ecdh::ecdh_generate().await.unwrap_or_else(|e| {
+fn aes_gcm_keygen_ecdh() -> Cmk {
+    let exch1 = Ecdh::ecdh_generate().unwrap_or_else(|e| {
         println!("Failed to generate ECDH exchange: {:?}", e);
         test_exit(1);
     });
-    let exch2 = Ecdh::ecdh_generate().await.unwrap_or_else(|e| {
+    let exch2 = Ecdh::ecdh_generate().unwrap_or_else(|e| {
         println!("Failed to generate ECDH exchange: {:?}", e);
         test_exit(1);
     });
 
     let finish_key = Ecdh::ecdh_finish(CmKeyUsage::Aes, &exch1, &exch2.exchange_data)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to finish ECDH exchange: {:?}", e);
             test_exit(1);
@@ -355,14 +355,14 @@ async fn aes_gcm_keygen_ecdh() -> Cmk {
     finish_key
 }
 
-async fn aes_gcm_key_import() -> Cmk {
+fn aes_gcm_key_import() -> Cmk {
     const TEST_AES_GCM_KEY: [u8; 32] = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
         0x1e, 0x1f,
     ];
     let cmk = Import::import(CmKeyUsage::Aes, &TEST_AES_GCM_KEY)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to import AES-GCM key: {:?}", e);
             test_exit(1);
@@ -372,10 +372,10 @@ async fn aes_gcm_key_import() -> Cmk {
     cmk
 }
 
-async fn test_caliptra_aes_gcm_spdm() {
+fn test_caliptra_aes_gcm_spdm() {
     let num = [8u8; 48];
     let cmk = Import::import(CmKeyUsage::Hmac, &num)
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to import key: {:?}", e);
             test_exit(1);
@@ -406,7 +406,7 @@ async fn test_caliptra_aes_gcm_spdm() {
             &plaintext[..],
             &mut ciphertext_buf[..],
         )
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to SPDM encrypt data: {:?}", e);
             test_exit(1);
@@ -431,7 +431,7 @@ async fn test_caliptra_aes_gcm_spdm() {
             tag,
             &mut decrypted_plaintext[..],
         )
-        .await
+        
         .unwrap_or_else(|e| {
             println!("Failed to SPDM decrypt data: {:?}", e);
             test_exit(1);
@@ -444,13 +444,13 @@ async fn test_caliptra_aes_gcm_spdm() {
     );
 }
 
-pub async fn test_caliptra_ecdsa() {
+pub fn test_caliptra_ecdsa() {
     println!("Starting Caliptra mailbox ECDSA test");
-    test_ecdsa().await;
+    test_ecdsa();
     println!("ECDSA test completed successfully");
 }
 
-async fn test_ecdsa() {
+fn test_ecdsa() {
     println!("Testing ECDSA");
     let test_key_label: [u8; KEY_LABEL_SIZE] = [0x44; KEY_LABEL_SIZE];
 
@@ -468,7 +468,7 @@ async fn test_ecdsa() {
             Some(&mut pubkey_x),
             Some(&mut pubkey_y),
         )
-        .await
+        
         .map_err(|e| {
             println!("Failed to get DPE leaf cert: {:?}", e);
             test_exit(1);
@@ -477,7 +477,7 @@ async fn test_ecdsa() {
 
     let mut msg_hash = [0u8; SHA384_HASH_SIZE];
     HashContext::hash_all(HashAlgoType::SHA384, &message, &mut msg_hash)
-        .await
+        
         .map_err(|e| {
             println!("Failed to hash message: {:?}", e);
             test_exit(1);
@@ -487,14 +487,14 @@ async fn test_ecdsa() {
     let mut signature = [0u8; ECC_P384_SIGNATURE_SIZE];
     cert_ctx
         .sign(Some(&test_key_label), &msg_hash, &mut signature)
-        .await
+        
         .map_err(|e| {
             println!("Failed to sign data: {:?}", e);
             test_exit(1);
         })
         .unwrap();
 
-    match Ecdsa::ecdsa_verify(pubkey_x, pubkey_y, &signature, msg_hash).await {
+    match Ecdsa::ecdsa_verify(pubkey_x, pubkey_y, &signature, msg_hash) {
         Ok(_) => {
             println!("ECDSA signature verified successfully");
         }

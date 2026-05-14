@@ -3,7 +3,7 @@
 use crate::cert_store::{cert_slot_mask, spdm_cert_chain_hash, SpdmCertStore};
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -31,9 +31,9 @@ pub struct GetDigestsRespCommon {
 
 impl CommonCodec for GetDigestsRespCommon {}
 
-async fn encode_cert_chain_digest<C: SpdmCertStore>(
+fn encode_cert_chain_digest(
     slot_id: u8,
-    cert_store: &C,
+    cert_store: &dyn SpdmCertStore,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -45,7 +45,7 @@ async fn encode_cert_chain_digest<C: SpdmCertStore>(
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
 
     spdm_cert_chain_hash(cert_store, slot_id, asym_algo, cert_chain_digest_buf)
-        .await
+        
         .map_err(|e| (false, CommandError::CertStore(e)))?;
 
     rsp.pull_data(SHA384_HASH_SIZE)
@@ -54,8 +54,8 @@ async fn encode_cert_chain_digest<C: SpdmCertStore>(
     Ok(SHA384_HASH_SIZE)
 }
 
-async fn generate_digests_response<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_digests_response<'a>(
+    ctx: &mut SpdmContext<'a>,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     ctx.validate_negotiated_hash_algo(rsp)?;
@@ -63,7 +63,7 @@ async fn generate_digests_response<'a, P: SpdmProvider>(
     let asym_algo = ctx.validate_negotiated_base_asym_algo(rsp)?;
 
     // Get the supported and provisioned slot masks.
-    let (supported_slot_mask, provisioned_slot_mask) = cert_slot_mask(ctx.device_certs_store).await;
+    let (supported_slot_mask, provisioned_slot_mask) = cert_slot_mask(ctx.device_certs_store);
 
     // No slots provisioned with certificates
     let slot_cnt = provisioned_slot_mask.count_ones() as usize;
@@ -93,21 +93,21 @@ async fn generate_digests_response<'a, P: SpdmProvider>(
     for slot_id in 0..slot_cnt {
         payload_len +=
             encode_cert_chain_digest(slot_id as u8, ctx.device_certs_store, asym_algo, rsp)
-                .await
+                
                 .map_err(|_| ctx.generate_error_response(rsp, ErrorCode::Unspecified, 0, None))?;
     }
 
     // Fill the multi-key connection response data if applicable
     if connection_version >= SpdmVersion::V13 && ctx.state.connection_info.multi_key_conn_rsp() {
-        payload_len += encode_multi_key_conn_rsp_data(ctx, provisioned_slot_mask, rsp).await?;
+        payload_len += encode_multi_key_conn_rsp_data(ctx, provisioned_slot_mask, rsp)?;
         // Append the response message to the DIGESTS transcript. This is needed later for TH1/TH2 calculation.
         ctx.append_message_to_transcript(rsp, TranscriptContext::Digests, None)
-            .await?;
+            ?;
     }
 
     // Append the response message to the M1 transcript
     ctx.append_message_to_transcript(rsp, TranscriptContext::M1, None)
-        .await?;
+        ?;
 
     // Push data offset up by total payload length
     rsp.push_data(payload_len)
@@ -115,8 +115,8 @@ async fn generate_digests_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
-async fn encode_multi_key_conn_rsp_data<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn encode_multi_key_conn_rsp_data(
+    ctx: &mut SpdmContext<'_>,
     provisioned_slot_mask: u8,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
@@ -145,17 +145,17 @@ async fn encode_multi_key_conn_rsp_data<P: SpdmProvider>(
         let key_pair_id = ctx
             .device_certs_store
             .key_pair_id(slot_id as u8)
-            .await
+            
             .unwrap_or_default();
         let cert_info = ctx
             .device_certs_store
             .cert_info(slot_id as u8)
-            .await
+            
             .unwrap_or_default();
         let key_usage_mask = ctx
             .device_certs_store
             .key_usage_mask(slot_id as u8)
-            .await
+            
             .unwrap_or_default();
 
         // Fill the KeyPairIDs
@@ -179,8 +179,8 @@ async fn encode_multi_key_conn_rsp_data<P: SpdmProvider>(
     Ok(total_size)
 }
 
-async fn process_get_digests<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn process_get_digests<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -205,12 +205,11 @@ async fn process_get_digests<'a, P: SpdmProvider>(
 
     // Append the request message to the M1 transcript
     ctx.append_message_to_transcript(req_payload, TranscriptContext::M1, None)
-        .await
+        
 }
 
-#[inline(never)]
-pub(crate) async fn handle_get_digests<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_get_digests<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -225,11 +224,11 @@ pub(crate) async fn handle_get_digests<'a, P: SpdmProvider>(
     }
 
     // Process GET_DIGESTS request
-    process_get_digests(ctx, spdm_hdr, req_payload).await?;
+    process_get_digests(ctx, spdm_hdr, req_payload)?;
 
     // Generate DIGESTS response
     ctx.prepare_response_buffer(req_payload)?;
-    generate_digests_response(ctx, req_payload).await?;
+    generate_digests_response(ctx, req_payload)?;
 
     if ctx.state.connection_info.state() < ConnectionState::AfterDigest {
         ctx.state

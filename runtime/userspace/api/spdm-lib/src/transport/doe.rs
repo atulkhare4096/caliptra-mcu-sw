@@ -2,15 +2,17 @@
 
 // DOE Transport Implementation
 
+extern crate alloc;
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
+use alloc::boxed::Box;
 use bitfield::bitfield;
 use caliptra_mcu_libsyscall_caliptra::doe::{driver_num, Doe};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const DOE_HEADER_SIZE: usize = 8;
 const DOE_PCI_SIG_VENDOR_ID: u16 = 0x0001; // PCI-SIG Vendor ID
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum DataObjectType {
     DoeSpdm = 1,
@@ -33,6 +35,7 @@ bitfield! {
     #[repr(C)]
     #[derive(Clone, FromBytes, IntoBytes, Immutable)]
     pub struct DoeHeader([u8]);
+    impl Debug;
     pub u16, vendor_id, set_vendor_id: 15, 0;
     pub u8, data_object_type, set_data_object_type: 23, 16;
     u8, reserved_1, _: 31, 24;
@@ -74,7 +77,7 @@ impl Default for DoeTransport {
 }
 
 impl SpdmTransport for DoeTransport {
-    async fn send_request<'a>(
+    fn send_request<'a>(
         &mut self,
         _dest_eid: u8,
         _req: &mut MessageBuf<'a>,
@@ -83,12 +86,12 @@ impl SpdmTransport for DoeTransport {
         // As a responder, we never send requests over DOE.
         Err(TransportError::OperationNotSupported)
     }
-    async fn receive_response<'a>(&mut self, _rsp: &mut MessageBuf<'a>) -> TransportResult<bool> {
+    fn receive_response<'a>(&mut self, _rsp: &mut MessageBuf<'a>) -> TransportResult<bool> {
         // Not applicable for DOE as a responder.
         Err(TransportError::OperationNotSupported)
     }
 
-    async fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool> {
+    fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool> {
         req.reset();
         let max_len = req.capacity();
         req.put_data(max_len).map_err(TransportError::Codec)?;
@@ -98,7 +101,7 @@ impl SpdmTransport for DoeTransport {
         let msg_len = self
             .doe
             .receive_message(data_buf)
-            .await
+            
             .map_err(TransportError::DriverError)?;
 
         if msg_len < DOE_HEADER_SIZE as u32 {
@@ -123,7 +126,7 @@ impl SpdmTransport for DoeTransport {
         }
     }
 
-    async fn send_response<'a>(
+    fn send_response<'a>(
         &mut self,
         resp: &mut MessageBuf<'a>,
         secure: bool,
@@ -149,7 +152,7 @@ impl SpdmTransport for DoeTransport {
 
         self.doe
             .send_message(rsp_buf)
-            .await
+            
             .map_err(TransportError::DriverError)?;
 
         Ok(())

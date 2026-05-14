@@ -13,6 +13,7 @@ use crate::transport::common::TransportError;
 use crate::vdm_handler::VdmError;
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub enum SpdmError {
     UnsupportedVersion,
     InvalidStandardsBodyId,
@@ -29,6 +30,7 @@ pub enum SpdmError {
     Vdm(VdmError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for SpdmError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("SpdmError")
@@ -39,6 +41,7 @@ pub type SpdmResult<T> = Result<T, SpdmError>;
 
 pub type CommandResult<T> = Result<T, (bool, CommandError)>;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum CommandError {
     BufferTooSmall,
@@ -60,6 +63,7 @@ pub enum CommandError {
     Vdm(VdmError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for CommandError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("CommandError")

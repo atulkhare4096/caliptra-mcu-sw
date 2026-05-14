@@ -2,6 +2,7 @@
 
 use crate::commands::certificate_rsp::CertificateResponse;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum ChunkError {
     /// Error initializing a large message context
@@ -20,6 +21,7 @@ pub enum ChunkError {
     BufUnavailable,
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for ChunkError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("ChunkError")
@@ -44,7 +46,7 @@ pub trait LargeMsgBufProvider {
 }
 
 /// Stores state and metadata for managing ongoing large message requests and responses.
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct ChunkState {
     in_use: bool,
     handle: u8,

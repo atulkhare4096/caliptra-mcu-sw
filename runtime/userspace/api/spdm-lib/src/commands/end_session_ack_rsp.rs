@@ -2,7 +2,7 @@
 
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::session::SessionState;
@@ -14,12 +14,13 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct EndSessionReqAttr(u8);
+    impl Debug;
     u8;
     pub negotiated_state_cleaning_indicator, set_negotiated_state_cleaning_indicator: 0, 0;
     reserved, _: 7, 1;
 }
 
-#[derive(FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct EndSessionReq {
     req_attr: EndSessionReqAttr,
@@ -28,7 +29,7 @@ struct EndSessionReq {
 
 impl CommonCodec for EndSessionReq {}
 
-#[derive(FromBytes, IntoBytes, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct EndSessionAck {
     reserved1: u8,
@@ -37,8 +38,8 @@ struct EndSessionAck {
 
 impl CommonCodec for EndSessionAck {}
 
-fn process_end_session<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn process_end_session(
+    ctx: &mut SpdmContext<'_>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'_>,
 ) -> CommandResult<()> {
@@ -53,8 +54,8 @@ fn process_end_session<P: SpdmProvider>(
     Ok(())
 }
 
-fn generate_end_session_response<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn generate_end_session_response(
+    ctx: &mut SpdmContext<'_>,
     rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<()> {
     // Prepare the response message
@@ -78,8 +79,8 @@ fn generate_end_session_response<P: SpdmProvider>(
     Ok(())
 }
 
-pub(crate) fn handle_end_session<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_end_session<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

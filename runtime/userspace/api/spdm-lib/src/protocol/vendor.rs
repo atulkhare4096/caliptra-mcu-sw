@@ -5,7 +5,7 @@ use crate::error::{SpdmError, SpdmResult};
 // Maximum length can be up to 255. Update MAX_SPDM_VENDOR_ID_LEN as needed.
 pub const MAX_SPDM_VENDOR_ID_LEN: u8 = 4;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardsBodyId {
     Dmtf = 0x0,
     Tcg = 0x1,

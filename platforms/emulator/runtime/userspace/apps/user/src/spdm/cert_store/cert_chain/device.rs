@@ -24,18 +24,18 @@ impl DpeCertChain {
         }
     }
 
-    async fn read_device_ecc_cert_chain(
+    fn read_device_ecc_cert_chain(
         &self,
         offset: usize,
         cert_portion: &mut [u8],
     ) -> CertStoreResult<usize> {
         CertContext::new()
             .cert_chain_chunk(offset, cert_portion)
-            .await
+            
             .map_err(CertStoreError::CaliptraApi)
     }
 
-    async fn cert_chain_offset(&self) -> usize {
+    fn cert_chain_offset(&self) -> usize {
         match self.cert_id {
             DeviceCertIndex::IdevId => 0,
         }
@@ -45,7 +45,7 @@ impl DpeCertChain {
         self.cert_chain_len = None; // Reset the certificate chain length
     }
 
-    pub async fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
+    pub fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
         if asym_algo != AsymAlgo::EccP384 {
             return Err(CertStoreError::UnsupportedAsymAlgo);
         }
@@ -55,11 +55,11 @@ impl DpeCertChain {
         }
 
         let mut cert_chain_len = 0;
-        let mut offset = self.cert_chain_offset().await;
+        let mut offset = self.cert_chain_offset();
         let mut buf = [0u8; MAX_CERT_PORTION_SIZE];
 
         loop {
-            let size = self.read_device_ecc_cert_chain(offset, &mut buf).await?;
+            let size = self.read_device_ecc_cert_chain(offset, &mut buf)?;
             cert_chain_len += size;
             offset += size;
             if size < MAX_CERT_PORTION_SIZE {
@@ -71,7 +71,7 @@ impl DpeCertChain {
         Ok(cert_chain_len)
     }
 
-    pub async fn read(
+    pub fn read(
         &mut self,
         asym_algo: AsymAlgo,
         offset: usize,
@@ -82,7 +82,7 @@ impl DpeCertChain {
         }
 
         if self.cert_chain_len.is_none() {
-            self.size(asym_algo).await?;
+            self.size(asym_algo)?;
         }
 
         let cert_chain_len = self.cert_chain_len.ok_or(CertStoreError::CertReadError)?;
@@ -90,6 +90,6 @@ impl DpeCertChain {
             return Err(CertStoreError::InvalidOffset);
         }
 
-        self.read_device_ecc_cert_chain(offset, buf).await
+        self.read_device_ecc_cert_chain(offset, buf)
     }
 }

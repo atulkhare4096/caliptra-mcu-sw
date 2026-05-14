@@ -16,7 +16,7 @@ struct DeviceInfoReq {
 
 impl CommonCodec for DeviceInfoReq {}
 
-pub(crate) async fn handle_device_info(
+pub(crate) fn handle_device_info(
     handler: &dyn CaliptraCmdHandler,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
@@ -27,7 +27,7 @@ pub(crate) async fn handle_device_info(
     // TODO: Consider extracting Codec trait to a shared crate so response types
     // (DeviceInfo, FirmwareVersion, etc.) can implement Codec directly, avoiding
     // field-by-field encoding here in the lib.
-    match handler.get_device_info(req.info_index, &mut info).await {
+    match handler.get_device_info(req.info_index, &mut info) {
         Ok(()) => {
             let DeviceInfo::Uid(uid) = &info;
             let data_len = uid.len.min(MAX_UID_LEN);

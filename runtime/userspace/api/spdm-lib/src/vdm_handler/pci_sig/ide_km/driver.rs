@@ -1,7 +1,11 @@
 // Licensed under the Apache-2.0 license
 
-use crate::vdm_handler::pci_sig::ide_km::protocol::*;
+extern crate alloc;
 
+use crate::vdm_handler::pci_sig::ide_km::protocol::*;
+use alloc::boxed::Box;
+
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IdeDriverError {
     InvalidPortIndex,
@@ -15,6 +19,7 @@ pub enum IdeDriverError {
     NoMemory,
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for IdeDriverError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("IdeDriverError")
@@ -91,7 +96,7 @@ pub trait IdeDriver: Send + Sync {
     /// - `02h`: Unsupported Port Index value
     /// - `03h`: Unsupported value in other fields
     /// - `04h`: Unspecified Failure
-    async fn key_prog(
+    fn key_prog(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -110,7 +115,7 @@ pub trait IdeDriver: Send + Sync {
     /// # Returns
     /// A result containing the updated `KeyInfo` after starting the key set, or an
     /// error if the operation fails.
-    async fn key_set_go(
+    fn key_set_go(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -127,7 +132,7 @@ pub trait IdeDriver: Send + Sync {
     /// # Returns
     /// A result containing the updated `KeyInfo` after stopping the key set, or an error
     /// if the operation fails.
-    async fn key_set_stop(
+    fn key_set_stop(
         &mut self,
         stream_id: u8,
         key_info: KeyInfo,
@@ -276,7 +281,7 @@ mod tests {
             Ok(selective_reg_block)
         }
 
-        async fn key_prog(
+        fn key_prog(
             &mut self,
             _stream_id: u8,
             _key_info: KeyInfo,
@@ -288,7 +293,7 @@ mod tests {
             Ok(0x00) // Successful
         }
 
-        async fn key_set_go(
+        fn key_set_go(
             &mut self,
             _stream_id: u8,
             key_info: KeyInfo,
@@ -298,7 +303,7 @@ mod tests {
             Ok(key_info)
         }
 
-        async fn key_set_stop(
+        fn key_set_stop(
             &mut self,
             _stream_id: u8,
             key_info: KeyInfo,

@@ -14,13 +14,14 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy, Default)]
     #[repr(C)]
     pub struct SessionPolicy(u8);
+    impl Debug;
     u8;
     pub termination_policy, _: 0, 0;
     pub event_all_policy, _: 1, 1;
     reserved, _: 7, 2;
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum SessionState {
     HandshakeNotStarted, // Before KEY_EXCHANGE and after END_SESSION
     HandshakeInProgress, // After KEY_EXCHANGE and before FINISH
@@ -29,7 +30,7 @@ pub(crate) enum SessionState {
     Terminating,         // When END_SESSION is received
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SessionType {
     None,
     MacOnly,
@@ -90,48 +91,48 @@ impl SessionInfo {
     ///
     /// # Returns
     /// Self exchange data to be sent to peer.
-    pub async fn compute_dhe_secret(
+    pub fn compute_dhe_secret(
         &mut self,
         peer_exch_data: &[u8; CMB_ECDH_EXCHANGE_DATA_MAX_SIZE],
     ) -> SessionResult<[u8; CMB_ECDH_EXCHANGE_DATA_MAX_SIZE]> {
         self.key_schedule_ctx
             .compute_dhe_secret(peer_exch_data)
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 
-    pub async fn generate_session_handshake_key(
+    pub fn generate_session_handshake_key(
         &mut self,
         th1_transcript_hash: &[u8; SHA384_HASH_SIZE],
     ) -> SessionResult<()> {
         self.key_schedule_ctx
             .generate_session_handshake_key(th1_transcript_hash)
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 
-    pub async fn generate_session_data_key(
+    pub fn generate_session_data_key(
         &mut self,
         th2_transcript_hash: &[u8; SHA384_HASH_SIZE],
     ) -> SessionResult<()> {
         self.key_schedule_ctx
             .generate_session_data_key(th2_transcript_hash)
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 
-    pub async fn compute_hmac(
+    pub fn compute_hmac(
         &mut self,
         session_key_type: SessionKeyType,
         data: &[u8],
     ) -> SessionResult<[u8; SHA384_HASH_SIZE]> {
         self.key_schedule_ctx
             .hmac(session_key_type, data)
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 
-    pub async fn encrypt_secure_message(
+    pub fn encrypt_secure_message(
         &mut self,
         aad_data: &[u8],
         plaintext_message: &[u8],
@@ -154,11 +155,11 @@ impl SessionInfo {
                 plaintext_message,
                 encrypted_message,
             )
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 
-    pub async fn decrypt_secure_message(
+    pub fn decrypt_secure_message(
         &mut self,
         aad_data: &[u8],
         encrypted_message: &[u8],
@@ -183,7 +184,7 @@ impl SessionInfo {
                 plaintext_message,
                 tag,
             )
-            .await
+            
             .map_err(SessionError::KeySchedule)
     }
 }

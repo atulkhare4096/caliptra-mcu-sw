@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
-use crate::cert_store::{spdm_cert_chain_hash, SpdmCertStore, MAX_CERT_SLOTS_SUPPORTED};
+use crate::cert_store::{spdm_cert_chain_hash, MAX_CERT_SLOTS_SUPPORTED};
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -48,13 +48,14 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable)]
     #[repr(C)]
     struct ChallengeAuthAttr(u8);
+    impl Debug;
     u8;
     pub slot_id, set_slot_id: 3, 0;
     reserved, _: 7, 4;
 }
 
-async fn process_challenge<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn process_challenge<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<(u8, u8, Option<RequesterContext>)> {
@@ -87,7 +88,7 @@ async fn process_challenge<'a, P: SpdmProvider>(
         || !ctx
             .device_certs_store
             .is_provisioned(challenge_req.slot_id)
-            .await
+            
     {
         Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
     }
@@ -97,7 +98,7 @@ async fn process_challenge<'a, P: SpdmProvider>(
         match ctx
             .device_certs_store
             .key_usage_mask(challenge_req.slot_id)
-            .await
+            
         {
             Some(key_usage_mask) if key_usage_mask.challenge_usage() != 0 => {}
             _ => Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?,
@@ -106,7 +107,7 @@ async fn process_challenge<'a, P: SpdmProvider>(
 
     // Append the CHALLENGE request to the M1 transcript
     ctx.append_message_to_transcript(req_payload, TranscriptContext::M1, None)
-        .await?;
+        ?;
 
     Ok((
         challenge_req.slot_id,
@@ -115,8 +116,8 @@ async fn process_challenge<'a, P: SpdmProvider>(
     ))
 }
 
-async fn encode_m1_signature<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn encode_m1_signature<'a>(
+    ctx: &mut SpdmContext<'a>,
     slot_id: u8,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'a>,
@@ -127,7 +128,7 @@ async fn encode_m1_signature<'a, P: SpdmProvider>(
     let mut m1_transcript_hash = [0u8; SHA384_HASH_SIZE];
     ctx.shared_transcript
         .hash(TranscriptContext::M1, None, &mut m1_transcript_hash, true)
-        .await
+        
         .map_err(|e| (false, CommandError::Transcript(e)))?;
 
     let signing_context = if spdm_version >= SpdmVersion::V12 {
@@ -151,11 +152,11 @@ async fn encode_m1_signature<'a, P: SpdmProvider>(
             .copy_from_slice(&m1_transcript_hash[..SHA384_HASH_SIZE]);
         hash_ctx
             .init(HashAlgoType::SHA384, Some(&message[..]))
-            .await
+            
             .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
         hash_ctx
             .finalize(&mut tbs)
-            .await
+            
             .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
         tbs
     } else {
@@ -166,7 +167,7 @@ async fn encode_m1_signature<'a, P: SpdmProvider>(
 
     ctx.device_certs_store
         .sign_hash(asym_algo, slot_id, &tbs, &mut signature)
-        .await
+        
         .map_err(|e| (false, CommandError::CertStore(e)))?;
 
     // Encode the signature
@@ -183,8 +184,8 @@ async fn encode_m1_signature<'a, P: SpdmProvider>(
     Ok(sig_len)
 }
 
-async fn encode_challenge_auth_rsp_base<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn encode_challenge_auth_rsp_base<'a>(
+    ctx: &mut SpdmContext<'a>,
     slot_id: u8,
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'a>,
@@ -198,12 +199,12 @@ async fn encode_challenge_auth_rsp_base<'a, P: SpdmProvider>(
         asym_algo,
         &mut challenge_auth_rsp.cert_chain_hash,
     )
-    .await
+    
     .map_err(|e| (false, CommandError::CertStore(e)))?;
 
     // Get the nonce
     Rng::generate_random_number(&mut challenge_auth_rsp.nonce)
-        .await
+        
         .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
     // Encode the response
@@ -212,8 +213,8 @@ async fn encode_challenge_auth_rsp_base<'a, P: SpdmProvider>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-pub(crate) async fn encode_measurement_summary_hash<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn encode_measurement_summary_hash<'a>(
+    ctx: &mut SpdmContext<'a>,
     meas_summary_hash_type: u8,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<usize> {
@@ -225,7 +226,7 @@ pub(crate) async fn encode_measurement_summary_hash<'a, P: SpdmProvider>(
             &mut meas_summary_hash,
             ctx.large_msg_ctx.buf,
         )
-        .await
+        
         .map_err(|e| (false, CommandError::Measurement(e)))?;
 
     let hash_len = meas_summary_hash.len();
@@ -241,8 +242,8 @@ pub(crate) async fn encode_measurement_summary_hash<'a, P: SpdmProvider>(
     Ok(hash_len)
 }
 
-async fn generate_challenge_auth_response<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_challenge_auth_response<'a>(
+    ctx: &mut SpdmContext<'a>,
     slot_id: u8,
     meas_summary_hash_type: u8,
     requester_context: Option<RequesterContext>,
@@ -260,11 +261,11 @@ async fn generate_challenge_auth_response<'a, P: SpdmProvider>(
         .map_err(|e| (false, CommandError::Codec(e)))?;
 
     // Encode the CHALLENGE_AUTH response fixed fields
-    payload_len += encode_challenge_auth_rsp_base(ctx, slot_id, asym_algo, rsp).await?;
+    payload_len += encode_challenge_auth_rsp_base(ctx, slot_id, asym_algo, rsp)?;
 
     // Get the measurement summary hash
     if meas_summary_hash_type != 0 {
-        payload_len += encode_measurement_summary_hash(ctx, meas_summary_hash_type, rsp).await?;
+        payload_len += encode_measurement_summary_hash(ctx, meas_summary_hash_type, rsp)?;
     }
 
     let opaque_data = OpaqueData::default();
@@ -283,18 +284,17 @@ async fn generate_challenge_auth_response<'a, P: SpdmProvider>(
 
     // Append CHALLENGE_AUTH to the M1 transcript
     ctx.append_message_to_transcript(rsp, TranscriptContext::M1, None)
-        .await?;
+        ?;
 
     // Generate the signature and encode it in the response
-    payload_len += encode_m1_signature(ctx, slot_id, asym_algo, rsp).await?;
+    payload_len += encode_m1_signature(ctx, slot_id, asym_algo, rsp)?;
 
     rsp.push_data(payload_len)
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
-#[inline(never)]
-pub(crate) async fn handle_challenge<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_challenge<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -310,7 +310,7 @@ pub(crate) async fn handle_challenge<'a, P: SpdmProvider>(
 
     // Process CHALLENGE request
     let (slot_id, meas_summary_hash_type, req_context) =
-        process_challenge(ctx, spdm_hdr, req_payload).await?;
+        process_challenge(ctx, spdm_hdr, req_payload)?;
 
     // Generate CHALLENGE_AUTH response
     ctx.prepare_response_buffer(req_payload)?;
@@ -321,7 +321,7 @@ pub(crate) async fn handle_challenge<'a, P: SpdmProvider>(
         req_context,
         req_payload,
     )
-    .await?;
+    ?;
 
     // Change the connection state to Authenticated
     ctx.state

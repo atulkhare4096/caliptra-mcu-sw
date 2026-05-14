@@ -8,13 +8,13 @@ use crate::vdm_handler::{VdmError, VdmResult};
 use caliptra_mcu_common_commands::{CaliptraCmdHandler, DeviceCapabilities};
 use zerocopy::IntoBytes;
 
-pub(crate) async fn handle_device_capabilities(
+pub(crate) fn handle_device_capabilities(
     handler: &dyn CaliptraCmdHandler,
     _req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
 ) -> VdmResult<CaliptraVdmCmdResult> {
     let mut caps = DeviceCapabilities::default();
-    match handler.get_device_capabilities(&mut caps).await {
+    match handler.get_device_capabilities(&mut caps) {
         Ok(()) => {
             let mut len = (CaliptraCompletionCode::Success as u8)
                 .encode(rsp_buf)

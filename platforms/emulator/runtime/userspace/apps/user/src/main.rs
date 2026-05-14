@@ -6,11 +6,6 @@
 
 use core::fmt::Write;
 
-use caliptra_mcu_libtockasync::TockExecutor;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::{lazy_lock::LazyLock, signal::Signal};
 mod caliptra_cmd_handler;
 #[cfg(any(
     feature = "test-firmware-update-streaming",
@@ -45,8 +40,6 @@ fn print_to_console(buf: &str) {
     }
 }
 
-pub static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
-
 #[cfg(not(target_arch = "riscv32"))]
 pub(crate) fn kernel() -> caliptra_mcu_libtock_unittest::fake::Kernel {
     use caliptra_mcu_libtock_unittest::fake;
@@ -62,60 +55,56 @@ fn main() {
         #[allow(clippy::empty_loop)]
         loop {}
     }
-    // build a fake kernel so that the app will at least start without Tock
     let _kernel = kernel();
-    // call the main function
-    caliptra_mcu_libtockasync::start_async(start());
+    start();
 }
 
-#[embassy_executor::task]
-async fn start() {
+fn start() {
     unsafe {
         #[allow(static_mut_refs)]
         caliptra_mcu_romtime::set_printer(&mut EMULATOR_WRITER);
     }
-    async_main().await;
+    async_main();
 }
 
-pub(crate) async fn async_main() {
-    // TODO: Debug spawning the SPDM task causes a hardfault in FPGA when firmware update is enabled
-    // for now, disable the SPDM task if either FW update test is enabled
+pub(crate) fn async_main() {
+    // Boot-time operations (run to completion)
+    image_loader::image_loading_task();
+
+    // Initialize MCU Mbox for cooperative polling (if test features enabled)
+    #[cfg(any(
+        feature = "test-mcu-mbox-cmds",
+        feature = "test-mcu-mbox-fips-self-test",
+        feature = "test-mcu-mbox-fips-periodic",
+        feature = "test-caliptra-util-host-validator"
+    ))]
+    let mbox_enabled = mcu_mbox::init_polling();
+
+    // Runtime: cooperative service loop.
+    // SPDM hosts the loop and calls poll_others() on each iteration
+    // so other services can make progress concurrently.
     #[cfg(not(any(
         feature = "test-firmware-update-streaming",
         feature = "test-firmware-update-flash"
     )))]
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(spdm::spdm_task(EXECUTOR.get().spawner()))
-        .unwrap();
-
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(image_loader::image_loading_task())
-        .unwrap();
-
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(mcu_mbox::mcu_mbox_task())
-        .unwrap();
+    spdm::spdm_cooperative_main(&mut || {
+        #[cfg(any(
+            feature = "test-mcu-mbox-cmds",
+            feature = "test-mcu-mbox-fips-self-test",
+            feature = "test-mcu-mbox-fips-periodic",
+            feature = "test-caliptra-util-host-validator"
+        ))]
+        if mbox_enabled {
+            mcu_mbox::poll_one();
+        }
+    });
 
     #[cfg(feature = "test-mcu-mbox-fips-periodic")]
-    EXECUTOR
-        .get()
-        .spawner()
-        .spawn(caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task())
-        .unwrap();
+    caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task();
 
     #[cfg(any(
         feature = "test-mctp-vdm-cmds",
         feature = "test-caliptra-util-host-mctp-vdm-validator"
     ))]
-    EXECUTOR.get().spawner().spawn(vdm::vdm_task()).unwrap();
-
-    loop {
-        EXECUTOR.get().poll();
-    }
+    vdm::vdm_task();
 }

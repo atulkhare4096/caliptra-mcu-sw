@@ -7,6 +7,7 @@ use arrayvec::ArrayVec;
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext, SHA384_HASH_SIZE};
 use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum TranscriptError {
     BufferOverflow,
@@ -15,6 +16,7 @@ pub enum TranscriptError {
     CaliptraApi(CaliptraApiError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for TranscriptError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("TranscriptError")
@@ -108,20 +110,6 @@ impl Transcript {
         }
     }
 
-    /// Append data to a transcript context that is known to be synchronous
-    /// (Vca or Digests). Panics if called with an async context (M1, L1, Th).
-    pub fn append_sync(
-        &mut self,
-        context: TranscriptContext,
-        data: &[u8],
-    ) -> TranscriptResult<()> {
-        match context {
-            TranscriptContext::Vca => self.append_vca(data),
-            TranscriptContext::Digests => self.append_digests(data),
-            _ => panic!("append_sync called with async transcript context"),
-        }
-    }
-
     /// Append data to a transcript context.
     ///
     /// # Arguments
@@ -131,7 +119,7 @@ impl Transcript {
     ///
     /// # Returns
     /// * `TranscriptResult<()>` - Result indicating success or failure.
-    pub async fn append(
+    pub fn append(
         &mut self,
         context: TranscriptContext,
         session_info: Option<&mut SessionInfo>,
@@ -140,11 +128,11 @@ impl Transcript {
         match context {
             TranscriptContext::Vca => self.append_vca(data),
             TranscriptContext::Digests => self.append_digests(data),
-            TranscriptContext::M1 => self.append_m1(data).await,
-            TranscriptContext::L1 => self.append_l1(self.spdm_version, session_info, data).await,
+            TranscriptContext::M1 => self.append_m1(data),
+            TranscriptContext::L1 => self.append_l1(self.spdm_version, session_info, data),
             TranscriptContext::Th => {
                 if let Some(session) = session_info {
-                    self.append_th(session, data).await
+                    self.append_th(session, data)
                 } else {
                     Err(TranscriptError::MissingSessionInfo)
                 }
@@ -162,7 +150,7 @@ impl Transcript {
     ///
     /// # Returns
     /// * `TranscriptResult<()>` - Result indicating success or failure.
-    pub async fn hash(
+    pub fn hash(
         &mut self,
         context: TranscriptContext,
         session_info: Option<&mut SessionInfo>,
@@ -174,7 +162,7 @@ impl Transcript {
                 // M1 always uses global hash context
                 if let Some(ctx) = &mut self.hash_ctx_m1 {
                     ctx.finalize(hash)
-                        .await
+                        
                         .map_err(TranscriptError::CaliptraApi)?;
                     if finish_hash {
                         self.hash_ctx_m1 = None;
@@ -190,7 +178,7 @@ impl Transcript {
                         // Use session-specific L1 hash context
                         if let Some(ctx) = &mut session.session_transcript.hash_ctx_l1 {
                             ctx.finalize(hash)
-                                .await
+                                
                                 .map_err(TranscriptError::CaliptraApi)?;
                             if finish_hash {
                                 session.session_transcript.hash_ctx_l1 = None;
@@ -204,7 +192,7 @@ impl Transcript {
                         // Use global L1 hash context
                         if let Some(ctx) = &mut self.hash_ctx_l1 {
                             ctx.finalize(hash)
-                                .await
+                                
                                 .map_err(TranscriptError::CaliptraApi)?;
                             if finish_hash {
                                 self.hash_ctx_l1 = None;
@@ -222,7 +210,7 @@ impl Transcript {
                     Some(session) => {
                         if let Some(ctx) = &mut session.session_transcript.hash_ctx_th {
                             ctx.finalize(hash)
-                                .await
+                                
                                 .map_err(TranscriptError::CaliptraApi)?;
                             if finish_hash {
                                 session.session_transcript.hash_ctx_th = None;
@@ -242,7 +230,7 @@ impl Transcript {
         }
     }
 
-    fn append_vca(&mut self, data: &[u8]) -> TranscriptResult<()> {
+    pub(crate) fn append_vca(&mut self, data: &[u8]) -> TranscriptResult<()> {
         self.vca_buf
             .try_extend_from_slice(data)
             .map_err(|_| TranscriptError::BufferOverflow)
@@ -257,24 +245,24 @@ impl Transcript {
         Ok(())
     }
 
-    async fn append_m1(&mut self, data: &[u8]) -> TranscriptResult<()> {
+    fn append_m1(&mut self, data: &[u8]) -> TranscriptResult<()> {
         if let Some(ctx) = &mut self.hash_ctx_m1 {
-            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+            ctx.update(data).map_err(TranscriptError::CaliptraApi)
         } else {
             let vca_data = self.vca_buf.as_slice();
             let mut ctx = HashContext::new();
             ctx.init(HashAlgoType::SHA384, Some(vca_data))
-                .await
+                
                 .map_err(TranscriptError::CaliptraApi)?;
             ctx.update(data)
-                .await
+                
                 .map_err(TranscriptError::CaliptraApi)?;
             self.hash_ctx_m1 = Some(ctx);
             Ok(())
         }
     }
 
-    async fn append_l1(
+    fn append_l1(
         &mut self,
         spdm_version: SpdmVersion,
         session_info: Option<&mut SessionInfo>,
@@ -284,7 +272,7 @@ impl Transcript {
             Some(session) => {
                 // Use session-specific hash context
                 if let Some(ctx) = &mut session.session_transcript.hash_ctx_l1 {
-                    ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+                    ctx.update(data).map_err(TranscriptError::CaliptraApi)
                 } else {
                     let vca_data = if spdm_version >= SpdmVersion::V12 {
                         Some(self.vca_buf.as_slice())
@@ -294,10 +282,10 @@ impl Transcript {
 
                     let mut ctx = HashContext::new();
                     ctx.init(HashAlgoType::SHA384, vca_data)
-                        .await
+                        
                         .map_err(TranscriptError::CaliptraApi)?;
                     ctx.update(data)
-                        .await
+                        
                         .map_err(TranscriptError::CaliptraApi)?;
                     session.session_transcript.hash_ctx_l1 = Some(ctx);
                     Ok(())
@@ -306,7 +294,7 @@ impl Transcript {
             None => {
                 // Use global hash context
                 if let Some(ctx) = &mut self.hash_ctx_l1 {
-                    ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+                    ctx.update(data).map_err(TranscriptError::CaliptraApi)
                 } else {
                     let vca_data = if spdm_version >= SpdmVersion::V12 {
                         Some(self.vca_buf.as_slice())
@@ -316,10 +304,10 @@ impl Transcript {
 
                     let mut ctx = HashContext::new();
                     ctx.init(HashAlgoType::SHA384, vca_data)
-                        .await
+                        
                         .map_err(TranscriptError::CaliptraApi)?;
                     ctx.update(data)
-                        .await
+                        
                         .map_err(TranscriptError::CaliptraApi)?;
                     self.hash_ctx_l1 = Some(ctx);
                     Ok(())
@@ -328,13 +316,13 @@ impl Transcript {
         }
     }
 
-    async fn append_th(
+    fn append_th(
         &mut self,
         session_info: &mut SessionInfo,
         data: &[u8],
     ) -> TranscriptResult<()> {
         if let Some(ctx) = &mut session_info.session_transcript.hash_ctx_th {
-            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+            ctx.update(data).map_err(TranscriptError::CaliptraApi)
         } else {
             let vca_data = self.vca_buf.as_slice();
             let digests_data = self
@@ -344,13 +332,13 @@ impl Transcript {
                 .unwrap_or(&[]);
             let mut ctx = HashContext::new();
             ctx.init(HashAlgoType::SHA384, Some(vca_data))
-                .await
+                
                 .map_err(TranscriptError::CaliptraApi)?;
             ctx.update(digests_data)
-                .await
+                
                 .map_err(TranscriptError::CaliptraApi)?;
             ctx.update(data)
-                .await
+                
                 .map_err(TranscriptError::CaliptraApi)?;
             session_info.session_transcript.hash_ctx_th = Some(ctx);
             Ok(())

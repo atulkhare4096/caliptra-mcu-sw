@@ -8,6 +8,7 @@ use caliptra_mcu_common_commands::{
 };
 use caliptra_mcu_libapi_caliptra::crypto::rng::Rng;
 use caliptra_mcu_libapi_caliptra::mailbox_api::execute_mailbox_cmd;
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use caliptra_mcu_libsyscall_caliptra::mcu_mbox::MbxCmdStatus;
 use caliptra_mcu_libsyscall_caliptra::otp::Otp;
 use caliptra_mcu_libsyscall_caliptra::{caliptra, otp};
@@ -25,8 +26,9 @@ use caliptra_mcu_mbox_common::messages::{
     McuCmStatusReq, McuEcdhFinishReq, McuEcdhGenerateReq, McuEcdsaCmkPublicKeyReq,
     McuEcdsaCmkSignReq, McuEcdsaCmkVerifyReq, McuFeProgReq, McuFipsSelfTestGetResultsReq,
     McuFipsSelfTestStartReq, McuHkdfExpandReq, McuHkdfExtractReq, McuHmacKdfCounterReq, McuHmacReq,
-    McuProdDebugUnlockReqReq, McuProdDebugUnlockTokenReq, McuRandomGenerateReq, McuRandomStirReq,
-    McuResponseVarSize, McuShaFinalReq, McuShaInitReq, McuShaUpdateReq, ProvisionVendorPkHashReq,
+    McuMldsaCmkPublicKeyReq, McuMldsaCmkSignReq, McuMldsaCmkVerifyReq, McuProdDebugUnlockReqReq,
+    McuProdDebugUnlockTokenReq, McuRandomGenerateReq, McuRandomStirReq, McuResponseVarSize,
+    McuShaFinalReq, McuShaInitReq, McuShaUpdateReq, ProvisionVendorPkHashReq,
     ProvisionVendorPkHashResp, RevokeVendorPubKeyType, DEVICE_CAPS_SIZE, MAX_FW_VERSION_STR_LEN,
     MAX_RESP_DATA_SIZE,
 };
@@ -38,6 +40,7 @@ use caliptra_mcu_mbox_common::messages::{
 use core::sync::atomic::{AtomicBool, Ordering};
 use zerocopy::{FromBytes, IntoBytes};
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub enum MsgHandlerError {
     Transport,
     McuMboxCommon,
@@ -46,6 +49,8 @@ pub enum MsgHandlerError {
     UnsupportedCommand,
     UnauthorizedCommand,
 }
+
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for MsgHandlerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("MsgHandlerError")
@@ -85,7 +90,7 @@ impl<'a> CmdInterface<'a> {
     /// `req_buf` should be sized to fit`size_of::<McuMailboxReq>()` (see [McuMailboxReq](caliptra_mcu_mbox_common::messages::McuMailboxReq)).
     ///
     /// `resp_buf` should be sized to fit `size_of::<McuMailboxResp>()` (see [McuMailboxResp]).
-    pub async fn handle_responder_msg(
+    pub fn handle_responder_msg(
         &mut self,
         req_buf: &mut [u8],
         resp_buf: &mut [u8],
@@ -96,12 +101,12 @@ impl<'a> CmdInterface<'a> {
         }
 
         // Receive a request from the transport.
-        let receive_result = self.transport.receive_request(req_buf).await;
+        let receive_result = self.transport.receive_request(req_buf);
 
         let status = match receive_result {
             Ok((cmd_id, req)) => {
                 // Process the request and prepare the response.
-                match self.process_request(req, cmd_id, resp_buf).await {
+                match self.process_request(req, cmd_id, resp_buf) {
                     Ok((resp, status)) => {
                         if status == MbxCmdStatus::Complete {
                             // guarantee it is big enough to hold the header
@@ -113,7 +118,7 @@ impl<'a> CmdInterface<'a> {
                             // Generate response checksum
                             populate_checksum(resp);
 
-                            self.transport.send_response(resp).await.map_err(|_| {
+                            self.transport.send_response(resp).map_err(|_| {
                                 let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
                                 MsgHandlerError::Transport
                             })?;
@@ -140,7 +145,70 @@ impl<'a> CmdInterface<'a> {
         Ok(())
     }
 
-    async fn process_request<'r>(
+    /// Process a pre-received request and send the response.
+    ///
+    /// Used by the non-blocking poll path. The request data has already been
+    /// validated by `McuMboxTransport::try_receive_request()`.
+    pub fn process_and_respond(
+        &mut self,
+        cmd_id: u32,
+        req: &[u8],
+        resp_buf: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
+        if resp_buf.len() < size_of::<MailboxRespHeader>() {
+            return Err(MsgHandlerError::InvalidParams);
+        }
+
+        let status = match self.process_request(req, cmd_id, resp_buf) {
+            Ok((resp, status)) => {
+                if status == MbxCmdStatus::Complete {
+                    if resp.len() < size_of::<MailboxRespHeader>() {
+                        let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                        return Err(MsgHandlerError::McuMboxCommon);
+                    }
+                    populate_checksum(resp);
+                    self.transport.send_response(resp).map_err(|_| {
+                        let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                        MsgHandlerError::Transport
+                    })?;
+                }
+                status
+            }
+            Err(_) => MbxCmdStatus::Failure,
+        };
+
+        self.transport
+            .finalize_response(status)
+            .map_err(|_| MsgHandlerError::Transport)
+    }
+
+    /// Non-blocking poll: check for a pending command and handle it if ready.
+    ///
+    /// Returns `true` if a command was handled, `false` if nothing was ready.
+    /// `nb_buf` must be the buffer passed to `transport.setup_non_blocking()`.
+    pub fn poll_one(
+        &mut self,
+        nb_buf: &[u8],
+        notify: &UpcallNotification,
+        resp_buf: &mut [u8],
+    ) -> bool {
+        let recv = self.transport.try_receive_request(nb_buf, notify);
+        match recv {
+            Ok(Some((cmd_opcode, recv_len))) => {
+                let _ = self.process_and_respond(cmd_opcode, &nb_buf[..recv_len], resp_buf);
+                self.transport.rearm(notify);
+                true
+            }
+            Ok(None) => false,
+            Err(_) => {
+                let _ = self.transport.finalize_response(MbxCmdStatus::Failure);
+                self.transport.rearm(notify);
+                false
+            }
+        }
+    }
+
+    fn process_request<'r>(
         &mut self,
         req: &[u8],
         cmd: u32,
@@ -153,17 +221,17 @@ impl<'a> CmdInterface<'a> {
         self.busy.store(true, Ordering::SeqCst);
 
         let result = match CommandId::from(cmd) {
-            CommandId::MC_FIRMWARE_VERSION => self.handle_fw_version(req, resp_buf).await,
-            CommandId::MC_DEVICE_CAPABILITIES => self.handle_device_caps(req, resp_buf).await,
-            CommandId::MC_DEVICE_ID => self.handle_device_id(req, resp_buf).await,
-            CommandId::MC_DEVICE_INFO => self.handle_device_info(req, resp_buf).await,
+            CommandId::MC_FIRMWARE_VERSION => self.handle_fw_version(req, resp_buf),
+            CommandId::MC_DEVICE_CAPABILITIES => self.handle_device_caps(req, resp_buf),
+            CommandId::MC_DEVICE_ID => self.handle_device_id(req, resp_buf),
+            CommandId::MC_DEVICE_INFO => self.handle_device_info(req, resp_buf),
             CommandId::MC_FIPS_SELF_TEST_START => {
                 self.handle_crypto_passthrough::<McuFipsSelfTestStartReq>(
                     req,
                     CaliptraCommandId::SELF_TEST_START.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_FIPS_SELF_TEST_GET_RESULTS => {
                 self.handle_crypto_passthrough::<McuFipsSelfTestGetResultsReq>(
@@ -171,15 +239,15 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::SELF_TEST_GET_RESULTS.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             #[cfg(feature = "periodic-fips-self-test")]
             CommandId::MC_FIPS_PERIODIC_ENABLE => {
-                self.handle_fips_periodic_enable(req, resp_buf).await
+                self.handle_fips_periodic_enable(req, resp_buf)
             }
             #[cfg(feature = "periodic-fips-self-test")]
             CommandId::MC_FIPS_PERIODIC_STATUS => {
-                self.handle_fips_periodic_status(req, resp_buf).await
+                self.handle_fips_periodic_status(req, resp_buf)
             }
             CommandId::MC_SHA_INIT => {
                 self.handle_crypto_passthrough::<McuShaInitReq>(
@@ -187,7 +255,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_SHA_INIT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_SHA_UPDATE => {
                 self.handle_crypto_passthrough::<McuShaUpdateReq>(
@@ -195,7 +263,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_SHA_UPDATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_SHA_FINAL => {
                 self.handle_crypto_passthrough::<McuShaFinalReq>(
@@ -203,7 +271,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_SHA_FINAL.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add HMAC command
             CommandId::MC_HMAC => {
@@ -212,7 +280,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_HMAC.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add HMAC KDF Counter command
             CommandId::MC_HMAC_KDF_COUNTER => {
@@ -221,7 +289,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_HMAC_KDF_COUNTER.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add HKDF Extract command
             CommandId::MC_HKDF_EXTRACT => {
@@ -230,7 +298,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_HKDF_EXTRACT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add HKDF Expand command
             CommandId::MC_HKDF_EXPAND => {
@@ -239,7 +307,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_HKDF_EXPAND.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_IMPORT => {
                 self.handle_crypto_passthrough::<McuCmImportReq>(
@@ -247,7 +315,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_IMPORT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_DELETE => {
                 self.handle_crypto_passthrough::<McuCmDeleteReq>(
@@ -255,7 +323,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_DELETE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_CM_STATUS => {
                 self.handle_crypto_passthrough::<McuCmStatusReq>(
@@ -263,7 +331,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_STATUS.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_RANDOM_GENERATE => {
                 self.handle_crypto_passthrough::<McuRandomGenerateReq>(
@@ -271,7 +339,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_RANDOM_GENERATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_RANDOM_STIR => {
                 self.handle_crypto_passthrough::<McuRandomStirReq>(
@@ -279,7 +347,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_RANDOM_STIR.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add AES Encrypt commands
             CommandId::MC_AES_ENCRYPT_INIT => {
@@ -288,7 +356,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_ENCRYPT_INIT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_ENCRYPT_UPDATE => {
                 self.handle_crypto_passthrough::<McuAesEncryptUpdateReq>(
@@ -296,7 +364,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_ENCRYPT_UPDATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add AES Decrypt commands
             CommandId::MC_AES_DECRYPT_INIT => {
@@ -305,7 +373,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_DECRYPT_INIT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_DECRYPT_UPDATE => {
                 self.handle_crypto_passthrough::<McuAesDecryptUpdateReq>(
@@ -313,7 +381,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_DECRYPT_UPDATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add AES GCM encrypt commands here.
             CommandId::MC_AES_GCM_ENCRYPT_INIT => {
@@ -322,7 +390,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_ENCRYPT_INIT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_GCM_ENCRYPT_UPDATE => {
                 self.handle_crypto_passthrough::<McuAesGcmEncryptUpdateReq>(
@@ -330,7 +398,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_ENCRYPT_UPDATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_GCM_ENCRYPT_FINAL => {
                 self.handle_crypto_passthrough::<McuAesGcmEncryptFinalReq>(
@@ -338,7 +406,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_ENCRYPT_FINAL.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add AES GCM decrypt commands here.
             CommandId::MC_AES_GCM_DECRYPT_INIT => {
@@ -347,7 +415,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_DECRYPT_INIT.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_GCM_DECRYPT_UPDATE => {
                 self.handle_crypto_passthrough::<McuAesGcmDecryptUpdateReq>(
@@ -355,7 +423,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_DECRYPT_UPDATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_AES_GCM_DECRYPT_FINAL => {
                 self.handle_crypto_passthrough::<McuAesGcmDecryptFinalReq>(
@@ -363,7 +431,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_AES_GCM_DECRYPT_FINAL.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add ECDH commands
             CommandId::MC_ECDH_GENERATE => {
@@ -372,7 +440,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_ECDH_GENERATE.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_ECDH_FINISH => {
                 self.handle_crypto_passthrough::<McuEcdhFinishReq>(
@@ -380,7 +448,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_ECDH_FINISH.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             // Add ECDSA CMK commands
             CommandId::MC_ECDSA_CMK_PUBLIC_KEY => {
@@ -389,7 +457,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_ECDSA_PUBLIC_KEY.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_ECDSA_CMK_SIGN => {
                 self.handle_crypto_passthrough::<McuEcdsaCmkSignReq>(
@@ -397,7 +465,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_ECDSA_SIGN.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_ECDSA_CMK_VERIFY => {
                 self.handle_crypto_passthrough::<McuEcdsaCmkVerifyReq>(
@@ -405,7 +473,32 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::CM_ECDSA_VERIFY.into(),
                     resp_buf,
                 )
-                .await
+                
+            }
+            // MLDSA CMK commands (passthrough to Caliptra mailbox)
+            CommandId::MC_MLDSA_CMK_PUBLIC_KEY => {
+                self.handle_crypto_passthrough::<McuMldsaCmkPublicKeyReq>(
+                    req,
+                    CaliptraCommandId::CM_MLDSA_PUBLIC_KEY.into(),
+                    resp_buf,
+                )
+                
+            }
+            CommandId::MC_MLDSA_CMK_SIGN => {
+                self.handle_crypto_passthrough::<McuMldsaCmkSignReq>(
+                    req,
+                    CaliptraCommandId::CM_MLDSA_SIGN.into(),
+                    resp_buf,
+                )
+                
+            }
+            CommandId::MC_MLDSA_CMK_VERIFY => {
+                self.handle_crypto_passthrough::<McuMldsaCmkVerifyReq>(
+                    req,
+                    CaliptraCommandId::CM_MLDSA_VERIFY.into(),
+                    resp_buf,
+                )
+                
             }
             // Debug Unlock commands
             CommandId::MC_PROD_DEBUG_UNLOCK_REQ => {
@@ -414,7 +507,7 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::PRODUCTION_AUTH_DEBUG_UNLOCK_REQ.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_PROD_DEBUG_UNLOCK_TOKEN => {
                 self.handle_crypto_passthrough::<McuProdDebugUnlockTokenReq>(
@@ -422,21 +515,21 @@ impl<'a> CmdInterface<'a> {
                     CaliptraCommandId::PRODUCTION_AUTH_DEBUG_UNLOCK_TOKEN.into(),
                     resp_buf,
                 )
-                .await
+                
             }
             CommandId::MC_GET_AUTH_CMD_CHALLENGE => {
-                self.handle_get_auth_cmd_challenge(req, resp_buf).await
+                self.handle_get_auth_cmd_challenge(req, resp_buf)
             }
             cmd_id @ CommandId::MC_PROVISION_VENDOR_PK_HASH
             | cmd_id @ CommandId::MC_FUSE_INCREASE_CALIPTRA_MIN_SVN
             | cmd_id @ CommandId::MC_FE_PROG
             | cmd_id @ CommandId::MC_FUSE_REVOKE_VENDOR_PK_HASH
             | cmd_id @ CommandId::MC_FUSE_REVOKE_VENDOR_PUB_KEY => {
-                self.handle_authorized_command(cmd_id, req, resp_buf).await
+                self.handle_authorized_command(cmd_id, req, resp_buf)
             }
             // Certificate commands
             CommandId::MC_EXPORT_ATTESTED_CSR => {
-                self.handle_export_attested_csr(req, resp_buf).await
+                self.handle_export_attested_csr(req, resp_buf)
             }
             // TODO: add more command handlers.
             // TODO: DOT runtime commands (DOT_CAK_INSTALL, DOT_LOCK, DOT_DISABLE,
@@ -449,7 +542,7 @@ impl<'a> CmdInterface<'a> {
         result
     }
 
-    async fn handle_fw_version<'r>(
+    fn handle_fw_version<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -464,7 +557,7 @@ impl<'a> CmdInterface<'a> {
         let ret = self
             .non_crypto_cmds_handler
             .get_firmware_version(index, &mut version)
-            .await;
+            ;
 
         let mbox_cmd_status = if ret.is_ok() && version.len <= MAX_FW_VERSION_STR_LEN {
             MbxCmdStatus::Complete
@@ -494,7 +587,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], mbox_cmd_status))
     }
 
-    async fn handle_device_caps<'r>(
+    fn handle_device_caps<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -507,7 +600,7 @@ impl<'a> CmdInterface<'a> {
         let ret = self
             .non_crypto_cmds_handler
             .get_device_capabilities(&mut caps)
-            .await;
+            ;
 
         let mbox_cmd_status = if ret.is_ok() && caps.as_bytes().len() <= DEVICE_CAPS_SIZE {
             MbxCmdStatus::Complete
@@ -534,7 +627,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], mbox_cmd_status))
     }
 
-    async fn handle_device_id<'r>(
+    fn handle_device_id<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -546,7 +639,7 @@ impl<'a> CmdInterface<'a> {
         let ret = self
             .non_crypto_cmds_handler
             .get_device_id(&mut device_id)
-            .await;
+            ;
 
         let mbox_cmd_status = if ret.is_ok() {
             MbxCmdStatus::Complete
@@ -570,7 +663,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], mbox_cmd_status))
     }
 
-    async fn handle_device_info<'r>(
+    fn handle_device_info<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -583,7 +676,7 @@ impl<'a> CmdInterface<'a> {
         let ret = self
             .non_crypto_cmds_handler
             .get_device_info(req.index, &mut device_info)
-            .await;
+            ;
 
         let mbox_cmd_status = if ret.is_ok() {
             MbxCmdStatus::Complete
@@ -616,7 +709,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], mbox_cmd_status))
     }
 
-    async fn handle_export_attested_csr<'r>(
+    fn handle_export_attested_csr<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -628,7 +721,7 @@ impl<'a> CmdInterface<'a> {
         let ret = self
             .non_crypto_cmds_handler
             .export_attested_csr(req.device_key_id, req.algorithm, &req.nonce, &mut data)
-            .await;
+            ;
 
         let (mbox_cmd_status, data_len) = match ret {
             Ok(len) => (MbxCmdStatus::Complete, len.min(MAX_RESP_DATA_SIZE)),
@@ -656,7 +749,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], mbox_cmd_status))
     }
 
-    async fn handle_get_auth_cmd_challenge<'r>(
+    fn handle_get_auth_cmd_challenge<'r>(
         &mut self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -669,7 +762,7 @@ impl<'a> CmdInterface<'a> {
         *resp = GetAuthCmdChallengeResp::default();
 
         Rng::generate_random_number(&mut resp.challenge)
-            .await
+            
             .map_err(|_| MsgHandlerError::McuMboxCommon)?;
 
         self.cmd_authorizer.set_challenge(resp.challenge);
@@ -677,7 +770,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..len], MbxCmdStatus::Complete))
     }
 
-    pub async fn handle_crypto_passthrough<'r, T: Default + IntoBytes + FromBytes>(
+    pub fn handle_crypto_passthrough<'r, T: Default + IntoBytes + FromBytes>(
         &self,
         req: &[u8],
         caliptra_cmd_code: u32,
@@ -700,7 +793,7 @@ impl<'a> CmdInterface<'a> {
             caliptra_req.as_mut_bytes(),
             resp_buf,
         )
-        .await;
+        ;
 
         match status {
             Ok(resp_len) => Ok((&mut resp_buf[..resp_len], MbxCmdStatus::Complete)),
@@ -708,7 +801,7 @@ impl<'a> CmdInterface<'a> {
         }
     }
 
-    async fn handle_authorized_command<'r>(
+    fn handle_authorized_command<'r>(
         &mut self,
         cmd_id: CommandId,
         req: &[u8],
@@ -717,27 +810,27 @@ impl<'a> CmdInterface<'a> {
         let cmd = self
             .cmd_authorizer
             .is_authorized(cmd_id, req)
-            .await
+            
             .map_err(|_| MsgHandlerError::UnauthorizedCommand)?;
         match cmd_id {
             CommandId::MC_PROVISION_VENDOR_PK_HASH => {
-                self.handle_provision_vendor_pk_hash(cmd, resp_buf).await
+                self.handle_provision_vendor_pk_hash(cmd, resp_buf)
             }
             CommandId::MC_FUSE_INCREASE_CALIPTRA_MIN_SVN => {
-                self.handle_increase_caliptra_min_svn(cmd, resp_buf).await
+                self.handle_increase_caliptra_min_svn(cmd, resp_buf)
             }
-            CommandId::MC_FE_PROG => self.handle_fe_prog(cmd, resp_buf).await,
+            CommandId::MC_FE_PROG => self.handle_fe_prog(cmd, resp_buf),
             CommandId::MC_FUSE_REVOKE_VENDOR_PUB_KEY => {
-                self.handle_revoke_vendor_pub_key(cmd, resp_buf).await
+                self.handle_revoke_vendor_pub_key(cmd, resp_buf)
             }
             CommandId::MC_FUSE_REVOKE_VENDOR_PK_HASH => {
-                self.handle_revoke_vendor_pk_hash(cmd, resp_buf).await
+                self.handle_revoke_vendor_pk_hash(cmd, resp_buf)
             }
             _ => Err(MsgHandlerError::UnsupportedCommand),
         }
     }
 
-    async fn handle_provision_vendor_pk_hash<'r>(
+    fn handle_provision_vendor_pk_hash<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -755,7 +848,7 @@ impl<'a> CmdInterface<'a> {
         Ok((resp_slice, res))
     }
 
-    async fn handle_increase_caliptra_min_svn<'r>(
+    fn handle_increase_caliptra_min_svn<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -776,7 +869,7 @@ impl<'a> CmdInterface<'a> {
             return Err(MsgHandlerError::InvalidParams);
         }
 
-        let caliptra_fw_info = self.get_caliptra_fw_info().await?;
+        let caliptra_fw_info = self.get_caliptra_fw_info()?;
 
         // Ensure the requested SVN will allow current Caliptra firmware to run
         if req.svn > caliptra_fw_info.fw_svn {
@@ -836,7 +929,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_bytes.len()], MbxCmdStatus::Complete))
     }
 
-    async fn handle_fe_prog<'r>(
+    fn handle_fe_prog<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -863,7 +956,7 @@ impl<'a> CmdInterface<'a> {
             caliptra_req.as_mut_bytes(),
             resp.as_mut_bytes(),
         )
-        .await
+        
         .map_err(|_| MsgHandlerError::McuMboxCommon)?;
 
         *resp = FuseWriteResp::default();
@@ -871,7 +964,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_len], MbxCmdStatus::Complete))
     }
 
-    async fn handle_revoke_vendor_pub_key<'r>(
+    fn handle_revoke_vendor_pub_key<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -889,7 +982,7 @@ impl<'a> CmdInterface<'a> {
             Err(MsgHandlerError::InvalidParams)?;
         }
 
-        let caliptra_info = self.get_caliptra_fw_info().await?;
+        let caliptra_info = self.get_caliptra_fw_info()?;
 
         // Check if the key to be revoked was a key used to boot. If so, return an error as a form
         // of proof of possession for other keys.
@@ -936,7 +1029,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..len], MbxCmdStatus::Complete))
     }
 
-    async fn handle_revoke_vendor_pk_hash<'r>(
+    fn handle_revoke_vendor_pk_hash<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -976,7 +1069,7 @@ impl<'a> CmdInterface<'a> {
         Ok((&mut resp_buf[..resp_len], MbxCmdStatus::Complete))
     }
 
-    async fn get_caliptra_fw_info(
+    fn get_caliptra_fw_info(
         &self,
     ) -> Result<caliptra_api::mailbox::FwInfoResp, MsgHandlerError> {
         let mut req = caliptra_api::mailbox::MailboxReqHeader::default();
@@ -1009,7 +1102,7 @@ impl<'a> CmdInterface<'a> {
             req.as_mut_bytes(),
             caliptra_info.as_mut_bytes(),
         )
-        .await
+        
         .map_err(|_| MsgHandlerError::McuMboxCommon)?;
 
         if len < size_of_val(&caliptra_info) {
@@ -1019,7 +1112,7 @@ impl<'a> CmdInterface<'a> {
     }
 
     #[cfg(feature = "periodic-fips-self-test")]
-    async fn handle_fips_periodic_enable<'r>(
+    fn handle_fips_periodic_enable<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],
@@ -1044,7 +1137,7 @@ impl<'a> CmdInterface<'a> {
     }
 
     #[cfg(feature = "periodic-fips-self-test")]
-    async fn handle_fips_periodic_status<'r>(
+    fn handle_fips_periodic_status<'r>(
         &self,
         req: &[u8],
         resp_buf: &'r mut [u8],

@@ -1,11 +1,10 @@
 // Licensed under the Apache-2.0 license
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
-use crate::transcript::TranscriptContext;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
@@ -141,8 +140,8 @@ fn req_flag_compatible(version: SpdmVersion, flags: &CapabilityFlags) -> bool {
     true
 }
 
-fn process_get_capabilities<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn process_get_capabilities<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -242,11 +241,11 @@ fn process_get_capabilities<'a, P: SpdmProvider>(
     ctx.measurements.set_spdm_version(spdm_version);
 
     // Append GET_CAPABILITIES to the transcript VCA context
-    ctx.append_message_to_transcript_sync(req_payload, TranscriptContext::Vca)
+    ctx.append_message_to_vca_transcript(req_payload)
 }
 
-fn generate_capabilities_response<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_capabilities_response<'a>(
+    ctx: &mut SpdmContext<'a>,
     rsp_buf: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     let version = ctx.state.connection_info.version_number();
@@ -281,7 +280,7 @@ fn generate_capabilities_response<'a, P: SpdmProvider>(
     }
 
     // Append CAPABILITIES to the transcript VCA context
-    ctx.append_message_to_transcript_sync(rsp_buf, TranscriptContext::Vca)?;
+    ctx.append_message_to_vca_transcript(rsp_buf)?;
 
     rsp_buf
         .push_data(payload_len)
@@ -289,8 +288,8 @@ fn generate_capabilities_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
-pub(crate) fn handle_get_capabilities<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_get_capabilities<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

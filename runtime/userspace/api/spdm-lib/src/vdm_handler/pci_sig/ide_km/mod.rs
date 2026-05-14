@@ -9,7 +9,6 @@ use crate::vdm_handler::{
     VdmError, VdmProtocolHandler, VdmProtocolMatcher, VdmResponder, VdmResult,
 };
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 pub(crate) mod commands;
 pub mod driver;
@@ -17,25 +16,24 @@ pub mod protocol;
 
 const IDE_KM_PROTOCOL_ID: u8 = 0x00;
 
-pub struct IdeKmResponder<'a, I: IdeDriver> {
-    ide_km_driver: &'a mut I,
+pub struct IdeKmResponder<'a> {
+    ide_km_driver: &'a mut dyn IdeDriver,
 }
 
-impl<'a, I: IdeDriver> IdeKmResponder<'a, I> {
-    pub fn new(ide_km_driver: &'a mut I) -> Self {
+impl<'a> IdeKmResponder<'a> {
+    pub fn new(ide_km_driver: &'a mut dyn IdeDriver) -> Self {
         IdeKmResponder { ide_km_driver }
     }
 }
 
-impl<I: IdeDriver> VdmProtocolMatcher for IdeKmResponder<'_, I> {
+impl VdmProtocolMatcher for IdeKmResponder<'_> {
     fn match_protocol(&self, protocol_id: u8) -> bool {
         protocol_id == IDE_KM_PROTOCOL_ID
     }
 }
 
-#[async_trait(?Send)]
-impl<I: IdeDriver> VdmResponder for IdeKmResponder<'_, I> {
-    async fn handle_request(
+impl VdmResponder for IdeKmResponder<'_> {
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,
@@ -51,20 +49,20 @@ impl<I: IdeDriver> VdmResponder for IdeKmResponder<'_, I> {
 
         match ide_km_req {
             IdeKmCommand::Query => {
-                commands::handle_query(req_buf, rsp_buf, self.ide_km_driver).await
+                commands::handle_query(req_buf, rsp_buf, self.ide_km_driver)
             }
             IdeKmCommand::KeyProg => {
-                commands::handle_key_prog(req_buf, rsp_buf, self.ide_km_driver).await
+                commands::handle_key_prog(req_buf, rsp_buf, self.ide_km_driver)
             }
             IdeKmCommand::KeySetGo => {
-                commands::handle_key_set_go_stop(true, req_buf, rsp_buf, self.ide_km_driver).await
+                commands::handle_key_set_go_stop(true, req_buf, rsp_buf, self.ide_km_driver)
             }
             IdeKmCommand::KeySetStop => {
-                commands::handle_key_set_go_stop(false, req_buf, rsp_buf, self.ide_km_driver).await
+                commands::handle_key_set_go_stop(false, req_buf, rsp_buf, self.ide_km_driver)
             }
             _ => Err(VdmError::InvalidVdmCommand),
         }
     }
 }
 
-impl<I: IdeDriver> VdmProtocolHandler for IdeKmResponder<'_, I> {}
+impl VdmProtocolHandler for IdeKmResponder<'_> {}

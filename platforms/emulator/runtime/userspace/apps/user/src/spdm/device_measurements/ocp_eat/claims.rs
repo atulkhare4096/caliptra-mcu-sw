@@ -5,7 +5,7 @@ use arrayvec::ArrayString;
 use arrayvec::ArrayVec;
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 use caliptra_mcu_libapi_caliptra::evidence::device_state::DeviceState;
-use caliptra_mcu_libapi_caliptra::evidence::ocp_eat_claims::encode_eat_claims_with_cti;
+use caliptra_mcu_libapi_caliptra::evidence::ocp_eat_claims::generate_eat_claims;
 use caliptra_mcu_libapi_caliptra::evidence::pcr_quote::PcrQuote;
 use caliptra_mcu_spdm_lib::measurements::{MeasurementsError, MeasurementsResult};
 use caliptra_ocp_eat::ocp_profile::{
@@ -15,7 +15,6 @@ use caliptra_ocp_eat::{
     ClassIdTypeChoice, ClassMap, ConciseEvidence, ConciseEvidenceMap, DigestEntry, EnvironmentMap,
     EvTriplesMap, EvidenceTripleRecord, MeasurementMap, MeasurementValue, TaggedBytes, VersionMap,
 };
-use core::fmt::Write;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -117,67 +116,20 @@ struct VersionField {
 ///
 /// # Returns
 /// Returns number of bytes written on success, or an error if claim generation or encoding fails.
-pub async fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> MeasurementsResult<usize> {
-    // Phase 1 (async): gather data from hardware via mailbox I/O
+pub fn generate_claims(claims_buf: &mut [u8], nonce: &[u8]) -> MeasurementsResult<usize> {
+    // version, svn, digests, integrity registers applicable to FW target envs
+    // digests, raw values applicable to HW target envs
     let mut versions = [0u32; NUM_FW_TARGET_ENV];
     let mut svns = [0u32; NUM_FW_TARGET_ENV];
     let mut digests = [[0u8; SHA384_HASH_SIZE]; NUM_FW_HW_TARGET_ENV];
     let mut journey_digests = [[0u8; SHA384_HASH_SIZE]; NUM_FW_TARGET_ENV];
 
-    fill_fw_config_info(
-        &mut versions,
-        &mut svns,
-        &mut digests[..NUM_FW_TARGET_ENV],
-        &mut journey_digests,
-    )
-    .await?;
-    fill_hw_config_info(
-        &mut digests[NUM_FW_TARGET_ENV..],
-    )?;
-    fill_sw_config_info()?;
-
-    // Generate CTI (random token ID) — the only async part of EAT encoding
-    let mut cti = [0u8; 64];
-    let cti_len = nonce.len().min(64);
-    caliptra_mcu_libapi_caliptra::crypto::rng::Rng::generate_random_number(&mut cti[..cti_len])
-        .await
-        .map_err(MeasurementsError::CaliptraApi)?;
-
-    // Phase 2 (sync): build all data structures and encode.
-    // All locals below live on the call stack, not in the async state machine.
-    build_and_encode_claims(
-        &versions,
-        &svns,
-        &digests,
-        &journey_digests,
-        &cti[..cti_len],
-        nonce,
-        claims_buf,
-    )
-}
-
-/// Sync function that builds measurement maps, evidence triples, and encodes EAT claims.
-/// By being non-async, its large intermediate arrays (~1KB+) live on the call stack
-/// instead of bloating the async state machine.
-#[inline(never)]
-fn build_and_encode_claims(
-    versions: &[u32; NUM_FW_TARGET_ENV],
-    svns: &[u32; NUM_FW_TARGET_ENV],
-    digests: &[[u8; SHA384_HASH_SIZE]; NUM_FW_HW_TARGET_ENV],
-    journey_digests: &[[u8; SHA384_HASH_SIZE]; NUM_FW_TARGET_ENV],
-    cti: &[u8],
-    nonce: &[u8],
-    claims_buf: &mut [u8],
-) -> MeasurementsResult<usize> {
     // Raw values only for HW and SW target envs
     let mut raw_values: [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>; NUM_HW_SW_TARGET_ENV] =
         [None; NUM_HW_SW_TARGET_ENV];
     // raw value masks only for SW target envs
     let mut raw_value_masks: [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>; NUM_SW_TARGET_ENV] =
         [None; NUM_SW_TARGET_ENV];
-
-    // Silence unused variable warnings — these are placeholders for future HW/SW populations
-    let _ = (&mut raw_values, &mut raw_value_masks);
 
     let mut digest_entries_arr: [[DigestEntry; 1]; NUM_FW_TARGET_ENV] = [[DigestEntry {
         alg_id: 7,
@@ -201,6 +153,21 @@ fn build_and_encode_claims(
         core::array::from_fn(|_| VersionField {
             buf: ArrayString::new(),
         });
+
+    // 1) Fill all the necessary leaf level measurement value info
+    fill_fw_config_info(
+        &mut versions,
+        &mut svns,
+        &mut digests[..NUM_FW_TARGET_ENV],
+        &mut journey_digests,
+    )
+    ?;
+    fill_hw_config_info(
+        &mut digests[NUM_FW_TARGET_ENV..],
+        &mut raw_values[..NUM_HW_TARGET_ENV],
+    )
+    ?;
+    fill_sw_config_info(&mut raw_values[NUM_HW_TARGET_ENV..], &mut raw_value_masks)?;
 
     // Convert u32 versions to ArrayStrings
     for i in 0..NUM_FW_TARGET_ENV {
@@ -282,18 +249,37 @@ fn build_and_encode_claims(
         concise_evidence: concise_evidence_map,
     });
 
-    // 7. Encode EAT claims (sync — CTI was pre-generated)
-    encode_eat_claims_with_cti(EAT_DEFAULT_ISSUER, nonce, cti, concise_evidence, claims_buf)
+    // 7. Generate EAT claims
+    generate_eat_claims(EAT_DEFAULT_ISSUER, nonce, concise_evidence, claims_buf)
+        
         .map_err(MeasurementsError::CaliptraApi)
 }
 
 fn version_to_str(ver: u32) -> ArrayString<MAX_SEMVER_LEN> {
-    let major = (ver >> 16) & 0xFF;
-    let minor = (ver >> 8) & 0xFF;
-    let patch = ver & 0xFF;
+    let major = ((ver >> 16) & 0xFF) as u8;
+    let minor = ((ver >> 8) & 0xFF) as u8;
+    let patch = (ver & 0xFF) as u8;
     let mut s = ArrayString::<MAX_SEMVER_LEN>::new();
-    let _ = write!(&mut s, "{}.{}.{}", major, minor, patch);
+    push_decimal(&mut s, major);
+    let _ = s.try_push('.');
+    push_decimal(&mut s, minor);
+    let _ = s.try_push('.');
+    push_decimal(&mut s, patch);
     s
+}
+
+fn push_decimal(s: &mut ArrayString<MAX_SEMVER_LEN>, value: u8) {
+    if value >= 100 {
+        push_digit(s, value / 100);
+        push_digit(s, (value / 10) % 10);
+    } else if value >= 10 {
+        push_digit(s, value / 10);
+    }
+    push_digit(s, value % 10);
+}
+
+fn push_digit(s: &mut ArrayString<MAX_SEMVER_LEN>, digit: u8) {
+    let _ = s.try_push((b'0' + digit) as char);
 }
 
 fn digest_words_to_bytes(words: &[u32; SHA384_HASH_WORDS]) -> [u8; SHA384_HASH_SIZE] {
@@ -304,7 +290,7 @@ fn digest_words_to_bytes(words: &[u32; SHA384_HASH_WORDS]) -> [u8; SHA384_HASH_S
     digest
 }
 
-async fn fill_fw_config_info(
+fn fill_fw_config_info(
     versions: &mut [u32; NUM_FW_TARGET_ENV],
     svns: &mut [u32; NUM_FW_TARGET_ENV],
     digests: &mut [[u8; SHA384_HASH_SIZE]],
@@ -316,10 +302,10 @@ async fn fill_fw_config_info(
     // Populate versions, svns, digests, journey_digests from device state or other sources
     // for default FW components first
     let fw_info = DeviceState::fw_info()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
     let (_, _, fmc_version, rt_version) = DeviceState::fw_version()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
 
     // VERSIONS: Get from fw_version
@@ -336,7 +322,7 @@ async fn fill_fw_config_info(
 
     // JOURNEY DIGESTS: Get journey digests from PCRs
     let pcrs = PcrQuote::get_pcrs()
-        .await
+        
         .map_err(MeasurementsError::CaliptraApi)?;
 
     journey_digests[FMC_MEASUREMENT_INDEX] = pcrs[FMC_FW_JOURNEY_PCR_INDEX];
@@ -345,7 +331,7 @@ async fn fill_fw_config_info(
     // Populate for SOC FW components next
     #[allow(clippy::reversed_empty_ranges)]
     for i in 0..NUM_SOC_FW_COMPONENTS {
-        match DeviceState::image_info(SOC_FW_IDS[i]).await {
+        match DeviceState::image_info(SOC_FW_IDS[i]) {
             Ok(image_info) => {
                 versions[NUM_DEFAULT_FW_COMPONENTS + i] = 0;
                 // Keep SVN at 0 for SoC components for now.
@@ -364,8 +350,9 @@ async fn fill_fw_config_info(
 
 fn fill_hw_config_info(
     digests: &mut [[u8; SHA384_HASH_SIZE]],
+    raw_values: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>],
 ) -> MeasurementsResult<()> {
-    if digests.len() != NUM_HW_TARGET_ENV {
+    if digests.len() != NUM_HW_TARGET_ENV || raw_values.len() != NUM_HW_TARGET_ENV {
         return Err(MeasurementsError::InvalidInput);
     }
     // TODO: Populate digests and raw_values from HW fuses or other sources
@@ -373,11 +360,64 @@ fn fill_hw_config_info(
     #[allow(clippy::reversed_empty_ranges)]
     for i in 0..NUM_HW_TARGET_ENV {
         digests[i] = [0u8; SHA384_HASH_SIZE];
+        raw_values[i] = None; // or Some(ArrayVec::from_slice(&[...]).unwrap());
     }
     Ok(())
 }
 
-fn fill_sw_config_info() -> MeasurementsResult<()> {
+fn fill_sw_config_info(
+    raw_values: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>],
+    raw_value_masks: &mut [Option<ArrayVec<u8, MAX_RAW_VALUE_LEN>>; NUM_SW_TARGET_ENV],
+) -> MeasurementsResult<()> {
+    if raw_values.len() != NUM_SW_TARGET_ENV {
+        return Err(MeasurementsError::InvalidInput);
+    }
     // TODO: Populate raw_values and raw_value_masks from SW config or other sources
+    // For now, set dummy values
+    #[allow(clippy::reversed_empty_ranges)]
+    for i in 0..NUM_SW_TARGET_ENV {
+        raw_values[i] = None; // or Some(ArrayVec::from_slice(&[...]).unwrap());
+        raw_value_masks[i] = None; // or Some(ArrayVec::from_slice(&[...]).unwrap());
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_to_str_typical() {
+        let ver = (1 << 16) | (2 << 8) | 3;
+        assert_eq!(version_to_str(ver).as_str(), "1.2.3");
+    }
+
+    #[test]
+    fn test_version_to_str_zeros() {
+        assert_eq!(version_to_str(0).as_str(), "0.0.0");
+    }
+
+    #[test]
+    fn test_version_to_str_single_digits() {
+        let ver = (9 << 16) | (8 << 8) | 7;
+        assert_eq!(version_to_str(ver).as_str(), "9.8.7");
+    }
+
+    #[test]
+    fn test_version_to_str_double_digits() {
+        let ver = (10 << 16) | (20 << 8) | 99;
+        assert_eq!(version_to_str(ver).as_str(), "10.20.99");
+    }
+
+    #[test]
+    fn test_version_to_str_triple_digits() {
+        let ver = (255 << 16) | (100 << 8) | 200;
+        assert_eq!(version_to_str(ver).as_str(), "255.100.200");
+    }
+
+    #[test]
+    fn test_version_to_str_max() {
+        let ver = (255 << 16) | (255 << 8) | 255;
+        assert_eq!(version_to_str(ver).as_str(), "255.255.255");
+    }
 }

@@ -22,15 +22,17 @@ use caliptra_mcu_pldm_common::util::mctp_transport::{
 };
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
-use embassy_executor::Spawner;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::signal::Signal;
+use core::sync::atomic::AtomicU8;
+use caliptra_mcu_libtock_platform::Syscalls;
 const YIELD_EVERY_ITERATIONS: u32 = 32;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub enum PldmServiceError {
     StartError,
     StopError,
 }
+
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for PldmServiceError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("PldmServiceError")
@@ -51,36 +53,33 @@ impl core::fmt::Debug for PldmServiceError {
 /// * `cmd_interface` - The command interface used by the PLDM service.
 /// * `running` - An atomic boolean indicating whether the PLDM service is currently running.
 /// * `initiator_signal` - A signal used to activate the PLDM initiator task.
+/// Simple flag for inter-task signaling (replaces embassy Signal).
+/// 0 = not signaled, 1 = signaled.
+static INITIATOR_FLAG: AtomicU8 = AtomicU8::new(0);
+
 pub struct PldmService<'a> {
-    spawner: Spawner,
     cmd_interface: CmdInterface<'a>,
     running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 }
 
 // Note: This implementation is a starting point for integration testing.
 // It will be extended and refactored to support additional PLDM commands in both responder and requester modes.
 impl<'a> PldmService<'a> {
-    pub fn init(fdops: &'a dyn FdOps, spawner: Spawner) -> Self {
+    pub fn init(fdops: &'a dyn FdOps) -> Self {
         let cmd_interface = CmdInterface::new(
             config::PLDM_PROTOCOL_CAPABILITIES.get(),
             FirmwareDeviceContext::new(fdops),
         );
         Self {
-            spawner,
             cmd_interface,
             running: {
                 static RUNNING: AtomicBool = AtomicBool::new(false);
                 &RUNNING
             },
-            initiator_signal: {
-                static INITIATOR_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-                &INITIATOR_SIGNAL
-            },
         }
     }
 
-    pub async fn start(&mut self) -> Result<(), PldmServiceError> {
+    pub fn start(&mut self) -> Result<(), PldmServiceError> {
         if self.running.load(Ordering::SeqCst) {
             return Err(PldmServiceError::StartError);
         }
@@ -90,21 +89,41 @@ impl<'a> PldmService<'a> {
         let cmd_interface: &'static CmdInterface<'static> =
             unsafe { core::mem::transmute(&self.cmd_interface) };
 
-        self.spawner
-            .spawn(pldm_responder_task(
-                cmd_interface,
-                self.running,
-                self.initiator_signal,
-            ))
-            .unwrap();
+        // Run combined responder+initiator loop (blocks)
+        pldm_service_loop(cmd_interface, self.running);
+        Ok(())
+    }
 
-        self.spawner
-            .spawn(pldm_initiator_task(
-                cmd_interface,
-                self.running,
-                self.initiator_signal,
-            ))
-            .unwrap();
+    /// Start the service and process messages until `done` returns true.
+    ///
+    /// Unlike `start()`, this returns control to the caller once the condition
+    /// is met. The service remains in the running state so it can be resumed
+    /// with another call to `run_until`.
+    pub fn run_until<F: Fn() -> bool>(&mut self, done: F) -> Result<(), PldmServiceError> {
+        if !self.running.load(Ordering::SeqCst) {
+            self.running.store(true, Ordering::SeqCst);
+        }
+
+        let cmd_interface: &'static CmdInterface<'static> =
+            unsafe { core::mem::transmute(&self.cmd_interface) };
+
+        let mut transport = MctpTransport::new(driver_num::MCTP_PLDM);
+        let mut msg_buffer = [0; MAX_MCTP_PLDM_MSG_SIZE];
+        let mut console_writer = Console::<DefaultSyscalls>::writer();
+
+        while self.running.load(Ordering::SeqCst) && !done() {
+            match cmd_interface.handle_responder_msg(&mut transport, &mut msg_buffer) {
+                Ok(_) => {}
+                Err(e) => {
+                    writeln!(console_writer, "PLDM_APP: Error handling responder msg: {:?}", e)
+                        .unwrap();
+                }
+            }
+
+            if cmd_interface.should_start_initiator_mode() {
+                pldm_initiator_inline(cmd_interface, self.running, &mut transport, &mut msg_buffer);
+            }
+        }
         Ok(())
     }
 
@@ -113,59 +132,68 @@ impl<'a> PldmService<'a> {
     }
 }
 
-#[embassy_executor::task]
-pub async fn pldm_initiator_task(
+pub fn pldm_responder_task(
     cmd_interface: &'static CmdInterface<'static>,
     running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
-    pldm_initiator(cmd_interface, running, initiator_signal).await;
+    pldm_responder(cmd_interface, running);
 }
 
-#[embassy_executor::task]
-pub async fn pldm_responder_task(
+/// Combined service loop that runs both responder and initiator in one thread.
+///
+/// The responder processes one incoming message per iteration.
+/// When the responder detects download state, the initiator runs inline.
+fn pldm_service_loop(
     cmd_interface: &'static CmdInterface<'static>,
     running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
-    pldm_responder(cmd_interface, running, initiator_signal).await;
+    let mut transport = MctpTransport::new(driver_num::MCTP_PLDM);
+    let mut msg_buffer = [0; MAX_MCTP_PLDM_MSG_SIZE];
+    let mut console_writer = Console::<DefaultSyscalls>::writer();
+
+    while running.load(Ordering::SeqCst) {
+        // Handle one responder message
+        match cmd_interface.handle_responder_msg(&mut transport, &mut msg_buffer) {
+            Ok(_) => {}
+            Err(e) => {
+                writeln!(console_writer, "PLDM_APP: Error handling responder msg: {:?}", e)
+                    .unwrap();
+            }
+        }
+
+        // When FD state is download state, run the initiator inline
+        if cmd_interface.should_start_initiator_mode() {
+            pldm_initiator_inline(cmd_interface, running, &mut transport, &mut msg_buffer);
+        }
+    }
 }
 
-pub async fn pldm_initiator(
+pub fn pldm_initiator_inline(
     cmd_interface: &'static CmdInterface<'static>,
     running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
+    transport: &mut MctpTransport,
+    msg_buffer: &mut [u8; MAX_MCTP_PLDM_MSG_SIZE],
 ) {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
-    loop {
-        // Wait for signal from responder before starting the loop
-        initiator_signal.wait().await;
 
-        if !running.load(Ordering::SeqCst) {
+    // Transfer session for optimized download - created lazily when entering download phase
+    let mut session: Option<TransferSession> = None;
+    let mut counter: u32 = 0;
+
+    while running.load(Ordering::SeqCst) {
+        if cmd_interface.should_stop_initiator_mode() {
             break;
         }
 
-        let mut msg_buffer = [0; MAX_MCTP_PLDM_MSG_SIZE];
-        let mut transport = MctpTransport::new(driver_num::MCTP_PLDM);
-
-        // Transfer session for optimized download - created lazily when entering download phase
-        let mut session: Option<TransferSession> = None;
-        let mut counter: u32 = 0;
-
-        while running.load(Ordering::SeqCst) {
-            if cmd_interface.should_stop_initiator_mode().await {
-                break;
-            }
-
-            // Use optimized download path when we have an active session
-            if let Some(ref mut sess) = session {
-                match run_optimized_download(cmd_interface, &mut transport, &mut msg_buffer, sess)
-                    .await
+        // Use optimized download path when we have an active session
+        if let Some(ref mut sess) = session {
+            match run_optimized_download(cmd_interface, transport, msg_buffer, sess)
+                    
                 {
                     Ok(download_complete) => {
                         if download_complete {
                             // Sync session state back to internal state
-                            cmd_interface.sync_transfer_session(sess).await;
+                            cmd_interface.sync_transfer_session(sess);
                             session = None;
                             // Fall through to regular handling for TransferComplete/Verify/Apply
                         }
@@ -178,7 +206,7 @@ pub async fn pldm_initiator(
                         )
                         .unwrap();
                         // Sync and fall back to regular path
-                        cmd_interface.sync_transfer_session(sess).await;
+                        cmd_interface.sync_transfer_session(sess);
                         session = None;
                     }
                 }
@@ -188,20 +216,20 @@ pub async fn pldm_initiator(
                 // yield every so often still so that we handle cancelations
                 counter = counter.wrapping_add(1);
                 if counter % YIELD_EVERY_ITERATIONS == 0 {
-                    let _ = AsyncAlarm::<DefaultSyscalls>::sleep_ticks(1).await;
+                    let _ = AsyncAlarm::<DefaultSyscalls>::sleep_ticks(1);
                 }
             } else {
                 // Handle phases via regular path, which will properly wait for Download state
                 match cmd_interface
-                    .handle_initiator_msg(&mut transport, &mut msg_buffer)
-                    .await
+                    .handle_initiator_msg(transport, msg_buffer)
+                    
                 {
                     Ok(_) => {
                         // After successful handling, check if we should switch to optimized download
                         // The regular handler will have processed the first chunk; now create session
                         // for subsequent chunks if we're still in download phase
-                        if cmd_interface.should_start_initiator_mode().await {
-                            session = Some(cmd_interface.create_transfer_session().await);
+                        if cmd_interface.should_start_initiator_mode() {
+                            session = Some(cmd_interface.create_transfer_session());
                             counter = 0;
                         }
                     }
@@ -215,17 +243,16 @@ pub async fn pldm_initiator(
                     }
                 }
 
-                // Sleep to yield control to other tasks (only in non-optimized path)
-                let _ = AsyncAlarm::<DefaultSyscalls>::sleep_ticks(1).await;
+                // Sleep to yield control (only in non-optimized path)
+                let _ = AsyncAlarm::<DefaultSyscalls>::sleep_ticks(1);
             }
         }
     }
-}
 
-pub async fn pldm_responder(
+#[allow(dead_code)]
+pub fn pldm_responder(
     cmd_interface: &'static CmdInterface<'static>,
     running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
     let mut transport = MctpTransport::new(driver_num::MCTP_PLDM);
 
@@ -235,7 +262,7 @@ pub async fn pldm_responder(
     while running.load(Ordering::SeqCst) {
         match cmd_interface
             .handle_responder_msg(&mut transport, &mut msg_buffer)
-            .await
+            
         {
             Ok(_) => {}
             Err(e) => {
@@ -248,9 +275,9 @@ pub async fn pldm_responder(
             }
         }
 
-        // When FD state is download state, signal the initiator task
-        if cmd_interface.should_start_initiator_mode().await && !initiator_signal.signaled() {
-            initiator_signal.signal(());
+        // When FD state is download state, flag for the initiator
+        if cmd_interface.should_start_initiator_mode() {
+            INITIATOR_FLAG.store(1, Ordering::SeqCst);
         }
     }
 }
@@ -259,7 +286,7 @@ pub async fn pldm_responder(
 ///
 /// This function runs the download phase with the session state kept outside the async mutex,
 /// only syncing back periodically or when the transfer completes/is cancelled.
-async fn run_optimized_download(
+fn run_optimized_download(
     cmd_interface: &'static CmdInterface<'static>,
     transport: &mut MctpTransport,
     msg_buffer: &mut [u8],
@@ -295,7 +322,7 @@ async fn run_optimized_download(
     // Query offset and length from ops (this is an async call but necessary)
     let (requested_offset, requested_length) = ops
         .query_download_offset_and_length(&session.component)
-        .await
+        
         .map_err(crate::error::MsgHandlerError::FdOps)?;
 
     // Calculate chunk parameters using local session state
@@ -332,13 +359,13 @@ async fn run_optimized_download(
     // Send request
     transport
         .send_request(ua_eid, &msg_buffer[..msg_len + MCTP_PLDM_MSG_HDR_LEN])
-        .await
+        
         .map_err(crate::error::MsgHandlerError::Transport)?;
 
     // Receive response
     transport
         .receive_response(msg_buffer)
-        .await
+        
         .map_err(crate::error::MsgHandlerError::Transport)?;
 
     // Process response
@@ -361,7 +388,7 @@ async fn run_optimized_download(
 
             let result = ops
                 .download_fw_data(chunk_offset as usize, fw_data, &session.component)
-                .await
+                
                 .map_err(crate::error::MsgHandlerError::FdOps)?;
 
             if result == TransferResult::TransferSuccess {

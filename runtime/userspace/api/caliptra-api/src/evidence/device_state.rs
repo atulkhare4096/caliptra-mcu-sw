@@ -12,7 +12,7 @@ use zerocopy::{FromBytes, IntoBytes};
 pub struct DeviceState;
 
 impl DeviceState {
-    pub async fn fw_info() -> CaliptraApiResult<FwInfoResp> {
+    pub fn fw_info() -> CaliptraApiResult<FwInfoResp> {
         let mailbox = Mailbox::new();
         let mut req = MailboxReqHeader::default();
         let req_bytes = req.as_mut_bytes();
@@ -25,7 +25,7 @@ impl DeviceState {
             req_bytes,
             &mut rsp_bytes,
         )
-        .await?;
+        ?;
         if size != size_of::<FwInfoResp>() {
             return Err(CaliptraApiError::InvalidResponse);
         }
@@ -36,7 +36,7 @@ impl DeviceState {
         Ok(resp)
     }
 
-    pub async fn image_info(image_id: u32) -> CaliptraApiResult<GetImageInfoResp> {
+    pub fn image_info(image_id: u32) -> CaliptraApiResult<GetImageInfoResp> {
         let mailbox = Mailbox::new();
         let mut req = GetImageInfoReq {
             hdr: MailboxReqHeader::default(),
@@ -52,7 +52,7 @@ impl DeviceState {
             req_bytes,
             &mut resp_bytes,
         )
-        .await?;
+        ?;
 
         if size != size_of::<GetImageInfoResp>() {
             return Err(CaliptraApiError::InvalidResponse);
@@ -64,7 +64,7 @@ impl DeviceState {
         Ok(resp)
     }
 
-    pub async fn fw_version() -> CaliptraApiResult<(u32, u32, u32, u32)> {
+    pub fn fw_version() -> CaliptraApiResult<(u32, u32, u32, u32)> {
         let mailbox = Mailbox::new();
         let mut req = MailboxReqHeader::default();
         let req_bytes = req.as_mut_bytes();
@@ -77,7 +77,7 @@ impl DeviceState {
             req_bytes,
             &mut rsp_bytes,
         )
-        .await?;
+        ?;
         if size != size_of::<FipsVersionResp>() {
             return Err(CaliptraApiError::InvalidResponse);
         }

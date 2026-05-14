@@ -3,12 +3,10 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 use caliptra_mcu_spdm_lib::cert_store::CertStoreResult;
 
-#[async_trait]
 pub trait EndorsementCertChainTrait: Send + Sync {
     /// Get the root cert hash of the endorsement cert chain.
     ///
@@ -17,7 +15,7 @@ pub trait EndorsementCertChainTrait: Send + Sync {
     ///
     /// # Returns
     /// The root cert hash as a byte array.
-    async fn root_cert_hash(
+    fn root_cert_hash(
         &self,
         asym_algo: AsymAlgo,
         root_hash: &mut [u8; SHA384_HASH_SIZE],
@@ -25,7 +23,7 @@ pub trait EndorsementCertChainTrait: Send + Sync {
 
     /// Refresh the cert chain portion if needed. This can be used to
     /// reset the state of the cert chain or re-fetch the cert buffers.
-    async fn refresh(&mut self);
+    fn refresh(&mut self);
 
     /// Get the size of the cert chain portion.
     ///
@@ -34,7 +32,7 @@ pub trait EndorsementCertChainTrait: Send + Sync {
     ///
     /// # Returns
     /// The size of the cert chain portion.
-    async fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize>;
+    fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize>;
 
     /// Read cert chain portion into the provided buffer.
     ///
@@ -45,7 +43,7 @@ pub trait EndorsementCertChainTrait: Send + Sync {
     ///
     /// # Returns
     /// The number of bytes read.
-    async fn read(
+    fn read(
         &mut self,
         asym_algo: AsymAlgo,
         offset: usize,

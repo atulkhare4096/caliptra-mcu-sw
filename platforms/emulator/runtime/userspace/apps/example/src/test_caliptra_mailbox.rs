@@ -7,7 +7,7 @@ use core::fmt::Write;
 use zerocopy::{FromBytes, IntoBytes};
 
 #[allow(unused)]
-pub(crate) async fn test_caliptra_mailbox() {
+pub(crate) fn test_caliptra_mailbox() {
     println!("Starting mailbox test");
 
     let mailbox: Mailbox = Mailbox::new();
@@ -27,7 +27,7 @@ pub(crate) async fn test_caliptra_mailbox() {
 
     if let Err(err) = mailbox
         .execute(QuotePcrsEcc384Req::ID.0, req_data, response_buffer)
-        .await
+        
     {
         println!("Mailbox command failed with err {:?}", err);
         test_exit(1);
@@ -59,7 +59,7 @@ pub(crate) async fn test_caliptra_mailbox() {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_caliptra_mailbox_bad_command() {
+pub(crate) fn test_caliptra_mailbox_bad_command() {
     println!("Starting mailbox bad command test");
 
     let mailbox: Mailbox = Mailbox::new();
@@ -77,7 +77,7 @@ pub(crate) async fn test_caliptra_mailbox_bad_command() {
 
     match mailbox
         .execute(0xffff_ffff, req_data, response_buffer)
-        .await
+        
     {
         Err(MailboxError::MailboxError(err))
             if err == u32::from(caliptra_error::CaliptraError::RUNTIME_UNIMPLEMENTED_COMMAND) =>
@@ -92,7 +92,7 @@ pub(crate) async fn test_caliptra_mailbox_bad_command() {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_caliptra_mailbox_fail() {
+pub(crate) fn test_caliptra_mailbox_fail() {
     println!("Starting mailbox failure test");
 
     let mailbox: Mailbox = Mailbox::new();
@@ -115,7 +115,7 @@ pub(crate) async fn test_caliptra_mailbox_fail() {
 
     match mailbox
         .execute(QuotePcrsEcc384Req::ID.0, req_data, response_buffer)
-        .await
+        
     {
         Err(MailboxError::MailboxError(err))
             if err == u32::from(caliptra_error::CaliptraError::RUNTIME_MAILBOX_INVALID_PARAMS) =>

@@ -2,11 +2,9 @@
 
 extern crate alloc;
 
-use super::pldm_client::{IMAGE_LOADING_TASK_YIELD, PLDM_TASK_YIELD};
 use super::pldm_context::{State, DOWNLOAD_CTX, PLDM_STATE};
 use crate::MAX_PLDM_TRANSFER_SIZE;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_flash_image::{FlashHeader, ImageHeader};
 use caliptra_mcu_libsyscall_caliptra::dma::{
     AXIAddr, DMAMapping, DMASource, DMATransaction, DMA as DMASyscall,
@@ -42,7 +40,7 @@ impl<'a, D: DMAMapping> StreamingFdOps<'a, D> {
         }
     }
 
-    async fn copy_buffer_to_load_address(
+    fn copy_buffer_to_load_address(
         &self,
         load_address: AXIAddr,
         offset: usize,
@@ -59,12 +57,12 @@ impl<'a, D: DMAMapping> StreamingFdOps<'a, D> {
             source: DMASource::Address(source_address),
             dest_addr: load_address + offset as u64,
         };
-        dma_syscall.xfer(&transaction).await.unwrap();
+        dma_syscall.xfer(&transaction).unwrap();
 
         Ok(())
     }
 
-    async fn copy_data_to_buffer(&self, _offset: usize, data: &[u8]) -> Result<(), FdOpsError> {
+    fn copy_data_to_buffer(&self, _offset: usize, data: &[u8]) -> Result<(), FdOpsError> {
         let state = PLDM_STATE.lock(|state| *state.borrow());
         let dma_params = DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
@@ -86,13 +84,12 @@ impl<'a, D: DMAMapping> StreamingFdOps<'a, D> {
         if let Some(dma_params) = dma_params {
             return self
                 .copy_buffer_to_load_address(dma_params.0, dma_params.1, data, self.dma_mapping)
-                .await;
+                ;
         }
         Ok(())
     }
 }
 
-#[async_trait(?Send)]
 impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
     fn get_device_identifiers(
         &self,
@@ -117,7 +114,7 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         Ok(())
     }
 
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
+    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
         Ok(ua_transfer_size.min(MAX_PLDM_TRANSFER_SIZE))
     }
 
@@ -141,25 +138,18 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         Ok(component.evaluate_update_eligibility(fw_params))
     }
 
-    async fn query_download_offset_and_length(
+    fn query_download_offset_and_length(
         &self,
         _component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
-        let should_yield = PLDM_STATE.lock(|state| {
+        // State transitions are read by the caller's run_until loop;
+        // no signal/wait needed.
+        PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             if *state == State::Initializing {
                 *state = State::Initialized;
-                return true;
-            } else if *state == State::HeaderDownloadComplete || *state == State::ImageDownloadReady
-            {
-                return true;
             }
-            false
         });
-        if should_yield {
-            IMAGE_LOADING_TASK_YIELD.signal(());
-            PLDM_TASK_YIELD.wait().await;
-        }
 
         let (offset, request_length) = DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
@@ -178,41 +168,31 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         Ok((offset, request_length))
     }
 
-    async fn download_fw_data(
+    fn download_fw_data(
         &self,
         offset: usize,
         data: &[u8],
         _component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
-        self.copy_data_to_buffer(offset, data).await?;
+        self.copy_data_to_buffer(offset, data)?;
         // update self.download_ctx
-        let should_yield = DOWNLOAD_CTX.lock(|ctx| {
+        DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
             if ctx.total_downloaded >= ctx.total_length {
                 PLDM_STATE.lock(|state| {
                     let mut state = state.borrow_mut();
                     if *state == State::DownloadingHeader {
                         *state = State::HeaderDownloadComplete;
-                        return false;
                     } else if *state == State::DownloadingToc {
                         *state = State::TocDownloadComplete;
-                        return true;
                     } else if *state == State::DownloadingImage {
                         *state = State::ImageDownloadComplete;
-                        return true;
                     }
-                    false
-                })
+                });
             } else {
                 ctx.current_offset += data.len();
-                false
             }
         });
-
-        if should_yield {
-            IMAGE_LOADING_TASK_YIELD.signal(());
-            PLDM_TASK_YIELD.wait().await;
-        }
 
         Ok(TransferResult::TransferSuccess)
     }
@@ -230,7 +210,7 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         Ok(())
     }
 
-    async fn verify(
+    fn verify(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -243,7 +223,7 @@ impl<D: DMAMapping> FdOps for StreamingFdOps<'_, D> {
         Ok(verify_result)
     }
 
-    async fn apply(
+    fn apply(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,

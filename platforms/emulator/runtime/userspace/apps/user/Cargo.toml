@@ -8,13 +8,10 @@ edition.workspace = true
 
 [dependencies]
 arrayvec.workspace = true
-async-trait.workspace = true
 caliptra-api.workspace = true
 constant_time_eq.workspace = true
 caliptra-ocp-eat.workspace = true
 critical-section.workspace = true
-embassy-executor.workspace = true
-embassy-sync.workspace = true
 caliptra-mcu-common-commands.workspace = true
 caliptra-mcu-libapi-caliptra.workspace = true
 caliptra-mcu-libapi-emulated-caliptra.workspace = true
@@ -44,7 +41,6 @@ zerocopy.workspace = true
 caliptra-mcu-libtock_unittest.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-embassy-executor = { version = "0.9.1", features = ["arch-riscv32"] }
 embedded-alloc.workspace = true
 portable-atomic = { workspace = true, features = ["critical-section"] }
 
@@ -53,6 +49,7 @@ default = []
 debug = []
 hw-2-1 = []
 doe = []
+pcr-quote-measurements = []
 test-caliptra-certs = []
 test-caliptra-crypto = []
 test-caliptra-mailbox = []
@@ -99,6 +96,7 @@ test-pldm-fw-update = []
 test-pldm-fw-update-e2e = []
 test-pldm-streaming-boot = []
 test-mctp-spdm-attestation = []
+test-mctp-spdm-attestation-pcr-quote = ["pcr-quote-measurements"]
 test-mctp-spdm-responder-conformance = []
 test-doe-spdm-responder-conformance = ["doe"]
 test-doe-spdm-tdisp-ide-validator = ["doe"]

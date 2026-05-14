@@ -6,7 +6,7 @@ use caliptra_mcu_romtime::{println, test_exit};
 use core::fmt::Write;
 
 #[allow(unused)]
-pub(crate) async fn test_mci_read_write() {
+pub(crate) fn test_mci_read_write() {
     println!("Starting test_mci_read_write");
 
     let mci: Mci = Mci::new();
@@ -25,7 +25,7 @@ pub(crate) async fn test_mci_read_write() {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_mci_fw_boot_reset() {
+pub(crate) fn test_mci_fw_boot_reset() {
     println!("Starting test_mci_fw_boot_reset");
 
     let mci: Mci = Mci::new();

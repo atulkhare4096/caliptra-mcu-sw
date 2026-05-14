@@ -6,6 +6,7 @@ use crate::protocol::{ReqRespCode, SpdmMsgHdr, SpdmVersion};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 // SPDM error codes
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq, Clone, Copy)]
 pub enum ErrorCode {
     InvalidRequest = 0x01,
@@ -32,6 +33,7 @@ pub enum ErrorCode {
     VendorDefined = 0xFF,
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for ErrorCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("ErrorCode")

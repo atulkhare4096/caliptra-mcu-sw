@@ -11,32 +11,19 @@ use caliptra_ocp_eat::CborEncoder;
 /// This should be sized based on the expected number of target environments added to the evidence.
 const EVIDENCE_SCRATCH_BUFFER_SIZE: usize = 1024;
 
-pub async fn generate_eat_claims(
+pub fn generate_eat_claims(
     issuer: &str,
     eat_nonce: &[u8],
-    concise_evidence: ConciseEvidence<'_>,
-    buffer: &mut [u8],
-) -> CaliptraApiResult<usize> {
-    // cti - unique identifier for the token
-    let mut cti = [0u8; 64];
-    let cti_len = eat_nonce.len().min(64);
-    Rng::generate_random_number(&mut cti[..cti_len]).await?;
-
-    encode_eat_claims_with_cti(issuer, eat_nonce, &cti[..cti_len], concise_evidence, buffer)
-}
-
-/// Sync variant: encodes EAT claims using a pre-generated CTI.
-/// Keeping this sync ensures its locals (1KB scratch buffer, encoder, etc.)
-/// live on the call stack rather than in an async state machine.
-pub fn encode_eat_claims_with_cti(
-    issuer: &str,
-    eat_nonce: &[u8],
-    cti: &[u8],
     concise_evidence: ConciseEvidence<'_>,
     buffer: &mut [u8],
 ) -> CaliptraApiResult<usize> {
     let measurement = MeasurementFormat::new(&concise_evidence);
     let measurements_array = [measurement];
+
+    // cti - unique identifier for the token
+    let mut cti = [0u8; 64];
+    let cti_len = eat_nonce.len().min(64);
+    Rng::generate_random_number(&mut cti[..cti_len])?;
 
     // Debug status - TODO: replace with actual status
     let debug_status = DebugStatus::Disabled;
@@ -44,7 +31,7 @@ pub fn encode_eat_claims_with_cti(
     // prepare EAT claims
     let mut eat_claims = OcpEatClaims::new(eat_nonce, debug_status, &measurements_array);
     eat_claims.issuer = Some(issuer);
-    eat_claims.cti = Some(cti);
+    eat_claims.cti = Some(&cti[..cti_len]);
 
     eat_claims.validate().map_err(CaliptraApiError::Eat)?;
     // Encode payload

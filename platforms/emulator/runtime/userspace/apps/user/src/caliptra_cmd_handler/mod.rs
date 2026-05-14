@@ -9,7 +9,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_common_commands::{
     CaliptraCmdHandler, CaliptraCmdResult, CaliptraCompletionCode, DeviceCapabilities, DeviceId,
     DeviceInfo, FirmwareVersion,
@@ -24,9 +23,8 @@ use caliptra_mcu_libapi_caliptra::error::CaliptraApiError;
 /// return `NotSupported` until their backend integrations are complete.
 pub struct CaliptraCmdBackend;
 
-#[async_trait]
 impl CaliptraCmdHandler for CaliptraCmdBackend {
-    async fn get_firmware_version(
+    fn get_firmware_version(
         &self,
         _index: u32,
         _version: &mut FirmwareVersion,
@@ -34,22 +32,22 @@ impl CaliptraCmdHandler for CaliptraCmdBackend {
         Err(CaliptraCompletionCode::UnsupportedOperation)
     }
 
-    async fn get_device_id(&self, _device_id: &mut DeviceId) -> CaliptraCmdResult<()> {
+    fn get_device_id(&self, _device_id: &mut DeviceId) -> CaliptraCmdResult<()> {
         Err(CaliptraCompletionCode::UnsupportedOperation)
     }
 
-    async fn get_device_info(&self, _index: u32, _info: &mut DeviceInfo) -> CaliptraCmdResult<()> {
+    fn get_device_info(&self, _index: u32, _info: &mut DeviceInfo) -> CaliptraCmdResult<()> {
         Err(CaliptraCompletionCode::UnsupportedOperation)
     }
 
-    async fn get_device_capabilities(
+    fn get_device_capabilities(
         &self,
         _capabilities: &mut DeviceCapabilities,
     ) -> CaliptraCmdResult<()> {
         Err(CaliptraCompletionCode::UnsupportedOperation)
     }
 
-    async fn export_attested_csr(
+    fn export_attested_csr(
         &self,
         device_key_id: u32,
         algorithm: u32,
@@ -63,7 +61,7 @@ impl CaliptraCmdHandler for CaliptraCmdBackend {
 
         let len = cert_ctx
             .get_attested_csr(algo, device_key_id, nonce, csr_buf)
-            .await
+            
             .map_err(|e| match e {
                 CaliptraApiError::MailboxBusy => CaliptraCompletionCode::CaliptraMailboxBusy,
                 CaliptraApiError::InvalidArgument(_) => CaliptraCompletionCode::InvalidParameter,
@@ -77,7 +75,7 @@ impl CaliptraCmdHandler for CaliptraCmdBackend {
         Ok(len)
     }
 
-    async fn export_idevid_csr(
+    fn export_idevid_csr(
         &self,
         algorithm: u32,
         csr_buf: &mut [u8],
@@ -92,7 +90,7 @@ impl CaliptraCmdHandler for CaliptraCmdBackend {
                 let mut csr_der = [0u8; IDEV_ECC_CSR_MAX_SIZE];
                 let len = cert_ctx
                     .get_idev_csr(&mut csr_der)
-                    .await
+                    
                     .map_err(|e| match e {
                         CaliptraApiError::MailboxBusy => {
                             CaliptraCompletionCode::CaliptraMailboxBusy

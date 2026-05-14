@@ -17,11 +17,11 @@ pub struct KeySetGoStop {
 }
 impl CommonCodec for KeySetGoStop {}
 
-pub(crate) async fn handle_key_set_go_stop<I: IdeDriver>(
+pub(crate) fn handle_key_set_go_stop(
     key_set_go: bool,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
-    ide_km_driver: &mut I,
+    ide_km_driver: &mut dyn IdeDriver,
 ) -> crate::vdm_handler::VdmResult<usize> {
     // Process KEY_SET_GO or KEY_SET_STOP request
     let key_set_go_stop =
@@ -34,7 +34,7 @@ pub(crate) async fn handle_key_set_go_stop<I: IdeDriver>(
                 key_set_go_stop.key_info,
                 key_set_go_stop.port_index,
             )
-            .await
+            
             .map_err(VdmError::Ide)?;
     } else {
         ide_km_driver
@@ -43,7 +43,7 @@ pub(crate) async fn handle_key_set_go_stop<I: IdeDriver>(
                 key_set_go_stop.key_info,
                 key_set_go_stop.port_index,
             )
-            .await
+            
             .map_err(VdmError::Ide)?;
     }
 

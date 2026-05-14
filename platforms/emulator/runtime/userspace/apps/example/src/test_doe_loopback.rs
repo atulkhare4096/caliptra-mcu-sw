@@ -2,7 +2,7 @@
 
 use caliptra_mcu_libsyscall_caliptra::doe::{driver_num, Doe};
 
-pub async fn test_doe_loopback() {
+pub fn test_doe_loopback() {
     let doe_spdm: Doe = Doe::new(driver_num::DOE_SPDM);
     loop {
         let mut msg_buffer: [u8; 1024] = [0; 1024];
@@ -12,13 +12,13 @@ pub async fn test_doe_loopback() {
         assert!(max_msg_size.is_ok());
         assert!(max_msg_size.unwrap() > 0);
 
-        let result = doe_spdm.receive_message(&mut msg_buffer).await;
+        let result = doe_spdm.receive_message(&mut msg_buffer);
         assert!(result.is_ok());
         let msg_len = result.unwrap();
         let msg_len = msg_len as usize;
         assert!(msg_len <= msg_buffer.len());
 
-        let result = doe_spdm.send_message(&msg_buffer[..msg_len]).await;
+        let result = doe_spdm.send_message(&msg_buffer[..msg_len]);
         assert!(result.is_ok());
     }
 }

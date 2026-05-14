@@ -7,11 +7,11 @@ use crate::codec::{CodecError, MessageBuf};
 use crate::protocol::*;
 use crate::vdm_handler::pci_sig::ide_km::driver::IdeDriverError;
 use crate::vdm_handler::pci_sig::tdisp::driver::TdispDriverError;
-use async_trait::async_trait;
 
 pub mod iana;
 pub mod pci_sig;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum VdmError {
     InvalidVendorId,
@@ -30,6 +30,7 @@ pub enum VdmError {
     Tdisp(TdispDriverError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for VdmError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("VdmError")
@@ -38,7 +39,6 @@ impl core::fmt::Debug for VdmError {
 
 pub type VdmResult<T> = Result<T, VdmError>;
 
-#[async_trait(?Send)]
 pub trait VdmResponder {
     /// Handle a VDM request and produce a response.
     ///
@@ -51,7 +51,7 @@ pub trait VdmResponder {
     ///
     /// # Returns
     /// `Ok(len)` for inline responses, or `Err(VdmError::LargeResp(n))` for large responses.
-    async fn handle_request(
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,

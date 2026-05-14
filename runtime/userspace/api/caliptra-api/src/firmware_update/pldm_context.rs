@@ -6,8 +6,7 @@ use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyRes
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use caliptra_mcu_pldm_common::protocol::firmware_update::Descriptor;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::blocking_mutex::Mutex;
+use caliptra_mcu_libtockasync::blocking::CsMutex as Mutex;
 
 use super::StagingMemory;
 
@@ -36,7 +35,7 @@ pub struct DownloadCtx<'a> {
     pub staging_memory: Option<&'a dyn StagingMemory>,
 }
 
-pub static DOWNLOAD_CTX: Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> =
+pub static DOWNLOAD_CTX: Mutex<RefCell<DownloadCtx>> =
     Mutex::new(RefCell::new(DownloadCtx {
         total_length: 0,
         current_offset: 0,
@@ -50,5 +49,5 @@ pub static DOWNLOAD_CTX: Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> =
         staging_memory: None,
     }));
 
-pub static PLDM_STATE: Mutex<CriticalSectionRawMutex, RefCell<State>> =
+pub static PLDM_STATE: Mutex<RefCell<State>> =
     Mutex::new(RefCell::new(State::NotRunning));

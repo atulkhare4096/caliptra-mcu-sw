@@ -2,7 +2,7 @@
 
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::{encode_error_response, ErrorCode};
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -38,6 +38,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Clone, Copy)]
 #[repr(C)]
 struct ChunkSenderAttr(u8);
+impl Debug;
 u8;
 pub last_chunk, set_last_chunk: 0, 0;
 reserved, _: 7, 1;
@@ -47,6 +48,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 struct ChunkReceiverAttr(u8);
+impl Debug;
 u8;
 pub early_error_detected, set_early_error_detected: 0, 0;
 reserved, _: 7, 1;
@@ -121,8 +123,8 @@ fn encode_chunk_send_ack_hdr(
     ack.encode(rsp).map_err(|e| (false, CommandError::Codec(e)))
 }
 
-fn validate_common<P: SpdmProvider>(
-    ctx: &SpdmContext<'_, P>,
+fn validate_common(
+    ctx: &SpdmContext<'_>,
     spdm_hdr: &SpdmMsgHdr,
     req: &mut MessageBuf<'_>,
 ) -> CommandResult<SpdmVersion> {
@@ -147,8 +149,8 @@ fn validate_common<P: SpdmProvider>(
     Ok(connection_version)
 }
 
-fn process_chunk_send<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn process_chunk_send(
+    ctx: &mut SpdmContext<'_>,
     spdm_hdr: SpdmMsgHdr,
     req: &mut MessageBuf<'_>,
 ) -> CommandResult<ChunkSendProcessResult> {
@@ -249,8 +251,8 @@ fn process_chunk_send<P: SpdmProvider>(
     }))
 }
 
-async fn generate_chunk_send_ack<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_chunk_send_ack<'a>(
+    ctx: &mut SpdmContext<'a>,
     info: ChunkSendInfo,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -280,7 +282,7 @@ async fn generate_chunk_send_ack<'a, P: SpdmProvider>(
             .map_err(|e| (false, CommandError::Codec(e)))?;
 
         // Dispatch the large request — handler writes ResponseToLargeRequest into rsp
-        ctx.handle_large_request_payload(rsp).await?;
+        ctx.handle_large_request_payload(rsp)?;
 
         // Encode the CHUNK_SEND_ACK header (fills in the reserved space)
         encode_chunk_send_ack_hdr(version, false, info.handle, info.chunk_seq_num, rsp)?;
@@ -296,8 +298,8 @@ async fn generate_chunk_send_ack<'a, P: SpdmProvider>(
     }
 }
 
-fn generate_chunk_send_early_error_ack<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn generate_chunk_send_early_error_ack(
+    ctx: &mut SpdmContext<'_>,
     handle: u8,
     chunk_seq_num: u16,
     rsp: &mut MessageBuf<'_>,
@@ -311,9 +313,8 @@ fn generate_chunk_send_early_error_ack<P: SpdmProvider>(
     Ok(())
 }
 
-#[inline(never)]
-pub(crate) async fn handle_chunk_send<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_chunk_send<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -326,7 +327,7 @@ pub(crate) async fn handle_chunk_send<'a, P: SpdmProvider>(
 
     ctx.prepare_response_buffer(req)?;
     match result {
-        ChunkSendProcessResult::Ack(info) => generate_chunk_send_ack(ctx, info, req).await,
+        ChunkSendProcessResult::Ack(info) => generate_chunk_send_ack(ctx, info, req),
         ChunkSendProcessResult::EarlyError {
             handle,
             chunk_seq_num,
@@ -340,7 +341,6 @@ mod tests {
 
     use super::*;
     use crate::cert_store::{CertStoreError, CertStoreResult, SpdmCertStore};
-    use crate::context::SpdmProvider;
     use crate::measurements::{MeasurementsResult, SpdmMeasurementValue};
     use crate::protocol::algorithms::LocalDeviceAlgorithms;
     use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
@@ -354,7 +354,7 @@ mod tests {
     struct TestTransport;
 
     impl SpdmTransport for TestTransport {
-        async fn send_request<'a>(
+        fn send_request<'a>(
             &mut self,
             _dest_eid: u8,
             _req: &mut MessageBuf<'a>,
@@ -363,21 +363,21 @@ mod tests {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn receive_response<'a>(
+        fn receive_response<'a>(
             &mut self,
             _rsp: &mut MessageBuf<'a>,
         ) -> TransportResult<bool> {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn receive_request<'a>(
+        fn receive_request<'a>(
             &mut self,
             _req: &mut MessageBuf<'a>,
         ) -> TransportResult<bool> {
             Err(TransportError::OperationNotSupported)
         }
 
-        async fn send_response<'a>(
+        fn send_response<'a>(
             &mut self,
             _resp: &mut MessageBuf<'a>,
             _secure: bool,
@@ -405,11 +405,11 @@ mod tests {
             0
         }
 
-        async fn is_provisioned(&self, _slot_id: u8) -> bool {
+        fn is_provisioned(&self, _slot_id: u8) -> bool {
             false
         }
 
-        async fn cert_chain_len(
+        fn cert_chain_len(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -417,7 +417,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn get_cert_chain<'a>(
+        fn get_cert_chain<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -427,7 +427,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn root_cert_hash<'a>(
+        fn root_cert_hash<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -436,7 +436,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn sign_hash<'a>(
+        fn sign_hash<'a>(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -446,7 +446,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn write_cert_chain(
+        fn write_cert_chain(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -457,7 +457,7 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn erase_cert_chain(
+        fn erase_cert_chain(
             &self,
             _asym_algo: AsymAlgo,
             _slot_id: u8,
@@ -465,21 +465,21 @@ mod tests {
             Err(CertStoreError::UnprovisionedSlot)
         }
 
-        async fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
+        fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
             None
         }
 
-        async fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
+        fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
             None
         }
 
-        async fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
+        fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
             None
         }
     }
 
     impl SpdmMeasurementValue for TestMeasurements {
-        async fn get_measurement_value(
+        fn get_measurement_value(
             &mut self,
             _index: u8,
             _nonce: &[u8],
@@ -516,19 +516,12 @@ mod tests {
         }
     }
 
-    struct TestPlatform;
-    impl SpdmProvider for TestPlatform {
-        type Transport = TestTransport;
-        type CertStore = TestCertStore;
-        type Measurements = TestMeasurements;
-    }
-
     fn test_context<'a>(
         transport: &'a mut TestTransport,
         cert_store: &'a TestCertStore,
         measurements: &'a mut TestMeasurements,
         buf_provider: &'a TestBufProvider,
-    ) -> SpdmContext<'a, TestPlatform> {
+    ) -> SpdmContext<'a> {
         let mut flags = CapabilityFlags::default();
         flags.set_chunk_cap(1);
         let capabilities = DeviceCapabilities {

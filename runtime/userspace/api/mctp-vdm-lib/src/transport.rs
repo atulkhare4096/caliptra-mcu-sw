@@ -2,6 +2,7 @@
 
 use crate::error::VdmLibError;
 use caliptra_mcu_libsyscall_caliptra::mctp::{driver_num, Mctp, MessageInfo};
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use caliptra_mcu_mctp_vdm_common::util::mctp_transport::{
     MctpCommonHeader, MCTP_COMMON_HEADER_OFFSET, MCTP_VDM_MSG_TYPE,
 };
@@ -45,13 +46,13 @@ impl MctpVdmTransport {
 
     /// Receive a VDM request.
     /// Returns the length of the received request.
-    pub async fn receive_request(&mut self, req: &mut [u8]) -> Result<usize, TransportError> {
+    pub fn receive_request(&mut self, req: &mut [u8]) -> Result<usize, TransportError> {
         // Reset msg buffer
         req.fill(0);
         let (req_len, msg_info) = self
             .mctp
             .receive_request(req)
-            .await
+            
             .map_err(|_| TransportError::ReceiveError)?;
 
         if req_len == 0 {
@@ -70,7 +71,7 @@ impl MctpVdmTransport {
     }
 
     /// Send a VDM response.
-    pub async fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
+    pub fn send_response(&mut self, resp: &[u8]) -> Result<(), TransportError> {
         // Ensure the response buffer is large enough to contain the MCTP common header.
         if resp.is_empty() {
             return Err(TransportError::BufferTooSmall);
@@ -84,7 +85,7 @@ impl MctpVdmTransport {
         if let Some(msg_info) = self.cur_resp_ctx.clone() {
             self.mctp
                 .send_response(resp, msg_info)
-                .await
+                
                 .map_err(|_| TransportError::SendError)?;
         } else {
             return Err(TransportError::NoRequestInFlight);
@@ -100,6 +101,52 @@ impl MctpVdmTransport {
         self.mctp
             .max_message_size()
             .map_err(|_| TransportError::DriverError)
+    }
+
+    // =========================================================================
+    // Non-blocking (upcall-driven) API
+    // =========================================================================
+
+    /// Set up a non-blocking receive-request operation.
+    pub fn setup_non_blocking(
+        &mut self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+    ) -> Result<(), TransportError> {
+        self.mctp
+            .setup_receive_request(buf, notify)
+            .map_err(|_| TransportError::DriverError)
+    }
+
+    /// Check if a request has arrived and populate `msg_buf` from the shared buffer.
+    pub fn try_receive_from_buffer(
+        &mut self,
+        notify: &UpcallNotification,
+        nb_buf: &[u8],
+        msg_buf: &mut [u8],
+    ) -> Result<Option<usize>, TransportError> {
+        if !notify.is_ready() {
+            return Ok(None);
+        }
+        let (recv_len_raw, _, msg_info_raw) = notify.args();
+        let recv_len = recv_len_raw as usize;
+        if recv_len == 0 {
+            return Err(TransportError::BufferTooSmall);
+        }
+        msg_buf[..recv_len].copy_from_slice(&nb_buf[..recv_len]);
+        msg_buf[recv_len..].fill(0);
+        let mctp_hdr = MctpCommonHeader(msg_buf[MCTP_COMMON_HEADER_OFFSET]);
+        if mctp_hdr.ic() != 0 || mctp_hdr.msg_type() != MCTP_VDM_MSG_TYPE {
+            return Err(TransportError::UnexpectedMessageType);
+        }
+        self.cur_resp_ctx = Some(msg_info_raw.into());
+        Ok(Some(recv_len))
+    }
+
+    /// Re-arm the non-blocking receive after processing.
+    pub fn rearm(&self, notify: &UpcallNotification) {
+        notify.clear();
+        let _ = self.mctp.arm_receive_request();
     }
 }
 

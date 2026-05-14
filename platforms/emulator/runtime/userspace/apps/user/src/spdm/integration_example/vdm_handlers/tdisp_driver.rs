@@ -1,5 +1,8 @@
 // Licensed under the Apache-2.0 license
 
+extern crate alloc;
+
+use alloc::boxed::Box;
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::tdisp::driver::{TdispDriver, TdispDriverResult};
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::tdisp::protocol::*;
 
@@ -43,7 +46,7 @@ impl TestTdispDriver {
 }
 
 impl TdispDriver for TestTdispDriver {
-    async fn get_capabilities(
+    fn get_capabilities(
         &self,
         _req_caps: TdispReqCapabilities,
         resp_caps: &mut TdispRespCapabilities,
@@ -53,7 +56,7 @@ impl TdispDriver for TestTdispDriver {
         Ok(0)
     }
 
-    async fn lock_interface(
+    fn lock_interface(
         &mut self,
         _function_id: FunctionId,
         _param: TdispLockInterfaceParam,
@@ -63,7 +66,7 @@ impl TdispDriver for TestTdispDriver {
         Ok(0)
     }
 
-    async fn get_device_interface_report_len(
+    fn get_device_interface_report_len(
         &self,
         _function_id: FunctionId,
         intf_report_len: &mut u16,
@@ -72,7 +75,7 @@ impl TdispDriver for TestTdispDriver {
         Ok(0)
     }
 
-    async fn get_device_interface_report(
+    fn get_device_interface_report(
         &self,
         _function_id: FunctionId,
         offset: u16,
@@ -94,7 +97,7 @@ impl TdispDriver for TestTdispDriver {
         Ok(0)
     }
 
-    async fn get_device_interface_state(
+    fn get_device_interface_state(
         &self,
         _function_id: FunctionId,
         tdi_state: &mut TdiStatus,
@@ -103,12 +106,12 @@ impl TdispDriver for TestTdispDriver {
         Ok(0)
     }
 
-    async fn start_interface(&mut self, _function_id: FunctionId) -> TdispDriverResult<u32> {
+    fn start_interface(&mut self, _function_id: FunctionId) -> TdispDriverResult<u32> {
         self.tdi_state = TdiStatus::Run;
         Ok(0)
     }
 
-    async fn stop_interface(&mut self, _function_id: FunctionId) -> TdispDriverResult<u32> {
+    fn stop_interface(&mut self, _function_id: FunctionId) -> TdispDriverResult<u32> {
         self.tdi_state = TdiStatus::ConfigUnlocked;
         Ok(0)
     }

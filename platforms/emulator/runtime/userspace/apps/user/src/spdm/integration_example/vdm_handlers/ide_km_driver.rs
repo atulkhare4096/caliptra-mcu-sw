@@ -1,5 +1,8 @@
 // Licensed under the Apache-2.0 license
 
+extern crate alloc;
+
+use alloc::boxed::Box;
 use caliptra_mcu_spdm_lib::vdm_handler::pci_sig::ide_km::driver::{
     IdeDriver, IdeDriverError, IdeDriverResult,
 };
@@ -157,7 +160,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(selective_reg_block)
     }
 
-    async fn key_prog(
+    fn key_prog(
         &mut self,
         _stream_id: u8,
         _key_info: KeyInfo,
@@ -169,7 +172,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(0x00) // Successful
     }
 
-    async fn key_set_go(
+    fn key_set_go(
         &mut self,
         _stream_id: u8,
         key_info: KeyInfo,
@@ -179,7 +182,7 @@ impl IdeDriver for TestIdeDriver {
         Ok(key_info)
     }
 
-    async fn key_set_stop(
+    fn key_set_stop(
         &mut self,
         _stream_id: u8,
         key_info: KeyInfo,

@@ -19,6 +19,7 @@ pub(crate) use key_schedule::{KeySchedule, KeyScheduleError, SessionKeyType};
 pub const MAX_NUM_SESSIONS: usize = 1;
 const MAX_SPDM_AEAD_ASSOCIATED_DATA_SIZE: usize = 16; // Size of the associated data for AEAD
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum SessionError {
     SessionsLimitReached,
@@ -34,6 +35,7 @@ pub enum SessionError {
     Codec(CodecError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for SessionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("SessionError")
@@ -156,9 +158,9 @@ impl SessionManager {
             .ok_or(SessionError::InvalidSessionId)
     }
 
-    pub async fn encode_secure_message<T: SpdmTransport>(
+    pub fn encode_secure_message(
         &mut self,
-        transport: &T,
+        transport: &dyn SpdmTransport,
         app_data_buffer: &[u8],
         secure_message: &mut MessageBuf<'_>,
     ) -> SessionResult<()> {
@@ -202,7 +204,7 @@ impl SessionManager {
                 &plaintext_data[..encrypted_len],
                 &mut encrypted_data,
             )
-            .await?;
+            ?;
 
         let mut secure_message_len = session_id
             .encode(secure_message)
@@ -235,9 +237,9 @@ impl SessionManager {
         Ok(())
     }
 
-    pub async fn decode_secure_message<T: SpdmTransport>(
+    pub fn decode_secure_message(
         &mut self,
-        transport: &T,
+        transport: &dyn SpdmTransport,
         secure_message: &mut MessageBuf<'_>,
         app_data_buffer: &mut [u8],
     ) -> SessionResult<usize> {
@@ -287,7 +289,7 @@ impl SessionManager {
 
         let decrypted_size = session_info
             .decrypt_secure_message(associated_data, encrypted_data, &mut plaintext_buffer, tag)
-            .await?;
+            ?;
 
         let mut plaintext_msg = MessageBuf::from(&mut plaintext_buffer[..decrypted_size]);
 

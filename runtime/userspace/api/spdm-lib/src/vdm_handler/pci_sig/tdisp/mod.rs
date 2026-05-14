@@ -15,7 +15,6 @@ use crate::vdm_handler::{
     VdmError, VdmProtocolHandler, VdmProtocolMatcher, VdmResponder, VdmResult,
 };
 use alloc::boxed::Box;
-use async_trait::async_trait;
 
 pub(crate) mod commands;
 pub mod driver;
@@ -42,16 +41,16 @@ macro_rules! error_response {
     };
 }
 
-pub struct TdispResponder<'a, D: TdispDriver> {
+pub struct TdispResponder<'a> {
     supported_versions: &'a [TdispVersion],
-    driver: &'a mut D,
+    driver: &'a mut dyn TdispDriver,
     state: TdispState,
 }
 
-impl<'a, D: TdispDriver> TdispResponder<'a, D> {
+impl<'a> TdispResponder<'a> {
     pub fn new(
         supported_versions: &'a [TdispVersion],
-        driver: &'a mut D,
+        driver: &'a mut dyn TdispDriver,
     ) -> Option<Self> {
         if supported_versions.is_empty() {
             return None;
@@ -64,15 +63,14 @@ impl<'a, D: TdispDriver> TdispResponder<'a, D> {
     }
 }
 
-impl<D: TdispDriver> VdmProtocolMatcher for TdispResponder<'_, D> {
+impl VdmProtocolMatcher for TdispResponder<'_> {
     fn match_protocol(&self, protocol_id: u8) -> bool {
         protocol_id == TDISP_PROTOCOL_ID
     }
 }
 
-#[async_trait(?Send)]
-impl<D: TdispDriver> VdmResponder for TdispResponder<'_, D> {
-    async fn handle_request(
+impl VdmResponder for TdispResponder<'_> {
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,
@@ -126,26 +124,26 @@ impl<D: TdispDriver> VdmResponder for TdispResponder<'_, D> {
                 tdisp_version::handle_get_tdisp_version(self, &req_hdr, rsp_buf)?
             }
             TdispCommand::GetTdispCapabilities => {
-                tdisp_capabilities::handle_get_tdisp_capabilities(self, req_buf, rsp_buf).await?
+                tdisp_capabilities::handle_get_tdisp_capabilities(self, req_buf, rsp_buf)?
             }
             TdispCommand::LockInterface => {
-                lock_interface::handle_lock_interface(self, &req_hdr, req_buf, rsp_buf).await?
+                lock_interface::handle_lock_interface(self, &req_hdr, req_buf, rsp_buf)?
             }
             TdispCommand::GetDeviceInterfaceReport => {
                 device_interface_report::handle_get_device_interface_report(
                     self, &req_hdr, req_buf, rsp_buf,
                 )
-                .await?
+                ?
             }
             TdispCommand::GetDeviceInterfaceState => {
                 device_interface_state::handle_get_device_interface_state(self, &req_hdr, rsp_buf)
-                    .await?
+                    ?
             }
             TdispCommand::StartInterfaceRequest => {
-                start_interface_rsp::handle_start_interface_request(self, &req_hdr, req_buf).await?
+                start_interface_rsp::handle_start_interface_request(self, &req_hdr, req_buf)?
             }
             TdispCommand::StopInterfaceRequest => {
-                stop_interface_rsp::handle_stop_interface_request(self, &req_hdr).await?
+                stop_interface_rsp::handle_stop_interface_request(self, &req_hdr)?
             }
             TdispCommand::BindP2PStreamRequest
             | TdispCommand::UnbindP2PStreamRequest
@@ -179,4 +177,4 @@ impl<D: TdispDriver> VdmResponder for TdispResponder<'_, D> {
     }
 }
 
-impl<D: TdispDriver> VdmProtocolHandler for TdispResponder<'_, D> {}
+impl VdmProtocolHandler for TdispResponder<'_> {}

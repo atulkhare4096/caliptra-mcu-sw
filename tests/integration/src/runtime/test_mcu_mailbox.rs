@@ -83,3 +83,55 @@ fn test_get_auth_cmd_challenge_cmd() -> Result<()> {
     );
     Ok(())
 }
+
+/// Verifies that MCU Mbox commands are processed through the cooperative poll
+/// loop (`spdm_cooperative_main` → `poll_others` → `mcu_mbox::poll_one`).
+///
+/// The `test-mcu-mbox-cmds` feature enables both the SPDM cooperative main
+/// loop and MCU Mbox polling. SPDM is always active (no feature gate);
+/// MCU Mbox `init_polling()` + `poll_one()` are enabled by the feature.
+///
+/// This test sends multiple different mbox commands in sequence to verify
+/// that the cooperative loop continues to process mbox requests while the
+/// SPDM responder is also armed and polling.
+#[test]
+fn test_cooperative_poll_loop_mbox() -> Result<()> {
+    let mut hw = start_runtime_hw_model(TestParams {
+        feature: Some("test-mcu-mbox-cmds"),
+        ..Default::default()
+    });
+
+    hw.step_until(|hw| {
+        hw.mci_boot_milestones()
+            .contains(McuBootMilestones::FIRMWARE_MAILBOX_READY)
+    });
+
+    // Send FirmwareVersion command — verifies first mbox poll_one() call
+    let fw_cmd = FirmwareVersionReq::default();
+    let fw_resp = hw.mailbox_execute_req(fw_cmd)?;
+    let expected_version = caliptra_mcu_mbox_common::config::TEST_FIRMWARE_VERSIONS[0];
+    assert_eq!(fw_resp.hdr.data_len, expected_version.len() as u32);
+
+    // Send GetAuthCmdChallenge — verifies second mbox poll_one() call
+    // (proves the cooperative loop re-armed after the first command)
+    let challenge_cmd = GetAuthCmdChallengeReq::default();
+    let challenge_resp = hw.mailbox_execute_req(challenge_cmd)?;
+    assert!(
+        challenge_resp
+            .challenge
+            .iter()
+            .copied()
+            .reduce(|a, b| (a | b))
+            .unwrap()
+            != 0,
+        "Challenge should not be all-zeros"
+    );
+
+    // Send FirmwareVersion again — verifies third iteration
+    // (proves continuous cooperative polling, not a one-shot)
+    let fw_cmd2 = FirmwareVersionReq::default();
+    let fw_resp2 = hw.mailbox_execute_req(fw_cmd2)?;
+    assert_eq!(fw_resp2.hdr.data_len, expected_version.len() as u32);
+
+    Ok(())
+}

@@ -10,6 +10,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 pub(crate) const OPAQUE_DATA_LEN_MAX_SIZE: usize = 1024; // Maximum size for opaque data
 const MAX_OPAQUE_ELEMENT_DATA_LEN: usize = 256; // Maximum size for opaque element data. Adjust as needed.
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum OpaqueDataError {
     InvalidStandardsBodyId,
@@ -19,6 +20,7 @@ pub enum OpaqueDataError {
     Codec(CodecError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for OpaqueDataError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("OpaqueDataError")
@@ -127,7 +129,7 @@ impl OpaqueData {
     }
 }
 
-#[derive(FromBytes, IntoBytes, Immutable)]
+#[derive(FromBytes, IntoBytes, Immutable, Debug)]
 #[repr(C)]
 pub struct GeneralOpaqueDataHdr {
     pub total_elements: u8,
@@ -145,6 +147,7 @@ impl GeneralOpaqueDataHdr {
     }
 }
 
+#[derive(Debug)]
 pub struct OpaqueElementHdr {
     standards_body_id: u8,
     vendor_id_len: u8,

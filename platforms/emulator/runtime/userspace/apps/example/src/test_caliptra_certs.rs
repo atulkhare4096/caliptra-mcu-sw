@@ -50,12 +50,12 @@ const SIGNED_IDEV_CERT_DER: [u8; 541] = [
 ];
 
 // test get idev_csr
-pub async fn test_get_idev_csr() {
+pub fn test_get_idev_csr() {
     println!("Starting Caliptra mailbox get idev csr test");
 
     let mut cert_mgr = CertContext::new();
     let mut csr_der = [0u8; IDEV_ECC_CSR_MAX_SIZE];
-    let result = cert_mgr.get_idev_csr(&mut csr_der).await;
+    let result = cert_mgr.get_idev_csr(&mut csr_der);
     match result {
         Ok(size) => {
             println!("Retrieved CSR of size: {}", size);
@@ -78,7 +78,7 @@ pub async fn test_get_idev_csr() {
     println!("Get idev csr test completed successfully");
 }
 
-pub async fn test_populate_idev_ecc384_cert() {
+pub fn test_populate_idev_ecc384_cert() {
     println!("Starting Caliptra mailbox populate idev cert test");
 
     println!(
@@ -90,7 +90,7 @@ pub async fn test_populate_idev_ecc384_cert() {
     let mut cert_mgr = CertContext::new();
     let result = cert_mgr
         .populate_idev_ecc384_cert(&SIGNED_IDEV_CERT_DER)
-        .await;
+        ;
     match result {
         Ok(_) => {
             println!("Successfully populated idev certificate");
@@ -103,12 +103,12 @@ pub async fn test_populate_idev_ecc384_cert() {
     println!("Populate idev cert test completed successfully");
 }
 
-pub async fn test_get_ldev_ecc384_cert() {
+pub fn test_get_ldev_ecc384_cert() {
     println!("Starting Caliptra mailbox get ldev cert test");
 
     let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_ldev_ecc384_cert(&mut cert).await;
+    let result = cert_mgr.get_ldev_ecc384_cert(&mut cert);
     match result {
         Ok(size) => {
             println!("Retrieved LDEV certificate of size: {}", size);
@@ -128,12 +128,12 @@ pub async fn test_get_ldev_ecc384_cert() {
     println!("Get ldev cert test completed successfully");
 }
 
-pub async fn test_get_fmc_alias_ecc384cert() {
+pub fn test_get_fmc_alias_ecc384cert() {
     println!("Starting Caliptra mailbox get FMC alias cert test");
 
     let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_fmc_alias_ecc384_cert(&mut cert).await;
+    let result = cert_mgr.get_fmc_alias_ecc384_cert(&mut cert);
     match result {
         Ok(size) => {
             println!("Retrieved FMC alias certificate of size: {}", size);
@@ -153,12 +153,12 @@ pub async fn test_get_fmc_alias_ecc384cert() {
     println!("Get FMC alias cert test completed successfully");
 }
 
-pub async fn test_get_rt_alias_ecc384cert() {
+pub fn test_get_rt_alias_ecc384cert() {
     println!("Starting Caliptra mailbox get FMC cert test");
 
     let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_rt_alias_384cert(&mut cert).await;
+    let result = cert_mgr.get_rt_alias_384cert(&mut cert);
     match result {
         Ok(size) => {
             println!("Retrieved RT alias certificate of size: {}", size);
@@ -178,7 +178,7 @@ pub async fn test_get_rt_alias_ecc384cert() {
     println!("Get RT alias cert test completed successfully");
 }
 
-pub async fn test_get_cert_chain() {
+pub fn test_get_cert_chain() {
     println!("Starting Caliptra mailbox get cert chain test");
 
     let mut cert_chain = [0u8; 4098];
@@ -199,7 +199,7 @@ pub async fn test_get_cert_chain() {
         println!("Getting certificate chain chunk at offset: {}", offset);
 
         // Get the next chunk of the certificate chain
-        let result = cert_mgr.cert_chain_chunk(offset, &mut cert_chunk).await;
+        let result = cert_mgr.cert_chain_chunk(offset, &mut cert_chunk);
         match result {
             Ok(size) => {
                 println!("Retrieved certificate chain of size: {}", size);
@@ -228,7 +228,7 @@ pub async fn test_get_cert_chain() {
     println!("Cert chain data: {:?}", &cert_chain[..offset]);
 }
 
-pub async fn test_certify_key() {
+pub fn test_certify_key() {
     println!("Starting Caliptra mailbox certify attestation key test");
 
     let mut cert_mgr = CertContext::new();
@@ -242,7 +242,7 @@ pub async fn test_certify_key() {
             Some(&mut pubkey_x),
             Some(&mut pubkey_y),
         )
-        .await;
+        ;
     match result {
         Ok(size) => {
             println!("Retrieved attestation key certificate of size: {}", size);
@@ -268,7 +268,7 @@ pub async fn test_certify_key() {
     println!("Certify attestation key test completed successfully");
 }
 
-pub async fn test_sign_with_test_key() {
+pub fn test_sign_with_test_key() {
     println!("Starting Caliptra mailbox sign with attestation key test");
 
     let mut cert_mgr = CertContext::new();
@@ -281,7 +281,7 @@ pub async fn test_sign_with_test_key() {
     let mut signature = [0u8; 128];
     let result = cert_mgr
         .sign(Some(&TEST_KEY_LABEL), &test_digest, &mut signature)
-        .await;
+        ;
     match result {
         Ok(size) => {
             println!("Retrieved attestation key signature of size: {}", size);
@@ -323,7 +323,7 @@ fn key_type_name(key_id: u32) -> &'static str {
     }
 }
 
-async fn test_get_attested_csr_for(algo: AsymAlgo, key_id: u32) {
+fn test_get_attested_csr_for(algo: AsymAlgo, key_id: u32) {
     println!(
         "Starting get attested {:?} CSR test for key: {} (0x{:04x})",
         algo,
@@ -334,7 +334,7 @@ async fn test_get_attested_csr_for(algo: AsymAlgo, key_id: u32) {
     let mut csr_data = [0u8; MAX_ATTESTED_CSR_SIZE];
     match cert_mgr
         .get_attested_csr(algo, key_id, &TEST_NONCE, &mut csr_data)
-        .await
+        
     {
         Ok(size) => {
             println!("Retrieved attested {:?} CSR of size: {}", algo, size);
@@ -348,9 +348,9 @@ async fn test_get_attested_csr_for(algo: AsymAlgo, key_id: u32) {
     println!("Get attested {:?} CSR test completed successfully", algo);
 }
 
-pub async fn test_get_attested_csr() {
+pub fn test_get_attested_csr() {
     for &key_id in &[KEY_ID_LDEVID, KEY_ID_FMC_ALIAS, KEY_ID_RT_ALIAS] {
-        test_get_attested_csr_for(AsymAlgo::EccP384, key_id).await;
-        test_get_attested_csr_for(AsymAlgo::MlDsa87, key_id).await;
+        test_get_attested_csr_for(AsymAlgo::EccP384, key_id);
+        test_get_attested_csr_for(AsymAlgo::MlDsa87, key_id);
     }
 }

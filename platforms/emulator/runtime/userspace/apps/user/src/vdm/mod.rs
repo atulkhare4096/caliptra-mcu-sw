@@ -9,21 +9,16 @@ mod cmd_handler_mock;
 use caliptra_mcu_libsyscall_caliptra::system::System;
 use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_console::Console;
-use caliptra_mcu_libtock_platform::ErrorCode;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
 use core::fmt::Write;
-#[allow(unused)]
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-#[allow(unused)]
-use embassy_sync::signal::Signal;
 #[cfg(any(
     feature = "test-mctp-vdm-cmds",
     feature = "test-caliptra-util-host-mctp-vdm-validator"
 ))]
 use static_cell::StaticCell;
 
-#[embassy_executor::task]
-pub async fn vdm_task() {
-    match start_vdm_service().await {
+pub fn vdm_task() {
+    match start_vdm_service() {
         Ok(_) => {}
         Err(_) => System::exit(1),
     }
@@ -31,7 +26,7 @@ pub async fn vdm_task() {
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-async fn start_vdm_service() -> Result<(), ErrorCode> {
+fn start_vdm_service() -> Result<(), ErrorCode> {
     let mut console_writer = Console::<DefaultSyscalls>::writer();
     writeln!(console_writer, "Starting MCTP VDM task...").unwrap();
 
@@ -77,7 +72,6 @@ async fn start_vdm_service() -> Result<(), ErrorCode> {
         .unwrap();
 
         if let Err(e) = caliptra_mcu_mctp_vdm_lib::daemon::spawn_vdm_responder(
-            crate::EXECUTOR.get().spawner(),
             cmd_interface,
         ) {
             writeln!(
@@ -87,8 +81,8 @@ async fn start_vdm_service() -> Result<(), ErrorCode> {
             )
             .unwrap();
         }
-        let suspend_signal: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-        suspend_signal.wait().await;
+        // Service blocks in spawn_vdm_responder; if it returns, suspend here
+        loop { DefaultSyscalls::yield_wait(); }
     }
 
     Ok(())

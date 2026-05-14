@@ -4,13 +4,15 @@
 
 extern crate alloc;
 
+pub mod blocking;
 mod future;
 pub use future::TockSubscribe;
+#[cfg(feature = "executor")]
 mod tock_executor;
+#[cfg(feature = "executor")]
 pub use tock_executor::TockExecutor;
 
 use critical_section::RawRestoreState;
-use embassy_executor::{SpawnToken, Spawner};
 
 // copied from libtock-rs/demos/st7789-slint/src/main.rs
 struct NullCriticalSection;
@@ -29,14 +31,14 @@ unsafe impl critical_section::Impl for NullCriticalSection {
     unsafe fn release(_token: RawRestoreState) {}
 }
 
-pub fn init<S>(spawner: Spawner, main: SpawnToken<S>) {
+#[cfg(feature = "executor")]
+pub fn init<S>(spawner: embassy_executor::Spawner, main: embassy_executor::SpawnToken<S>) {
     spawner.spawn(main).unwrap();
 }
 
-pub fn start_async<S>(main: SpawnToken<S>) -> ! {
-    // Safety: we are upgrading the lifetime of this executor. This is safe because main() lives forever
-    // and never returns, so the executor is never dropped.
+#[cfg(feature = "executor")]
+pub fn start_async<S>(main: embassy_executor::SpawnToken<S>) -> ! {
     let mut executor = TockExecutor::new();
     let executor: &'static mut TockExecutor = unsafe { core::mem::transmute(&mut executor) };
-    executor.run(|spawner: Spawner| init(spawner, main));
+    executor.run(|spawner: embassy_executor::Spawner| init(spawner, main));
 }

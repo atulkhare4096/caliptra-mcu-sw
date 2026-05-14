@@ -18,7 +18,7 @@ struct ExportIdevidCsrReq {
 
 impl CommonCodec for ExportIdevidCsrReq {}
 
-pub(crate) async fn handle_export_idevid_csr(
+pub(crate) fn handle_export_idevid_csr(
     handler: &dyn CaliptraCmdHandler,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
@@ -37,7 +37,7 @@ pub(crate) async fn handle_export_idevid_csr(
 
     // Use the tail of large_rsp_buf as scratch space for the CSR data.
     let csr_buf = &mut large_rsp_buf[large_hdr_len..];
-    let data_len = match handler.export_idevid_csr(req.algorithm, csr_buf).await {
+    let data_len = match handler.export_idevid_csr(req.algorithm, csr_buf) {
         Ok(len) => len,
         Err(e) => return Ok(CaliptraVdmCmdResult::ErrorResponse(e)),
     };

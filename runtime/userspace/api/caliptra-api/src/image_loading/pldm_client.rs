@@ -5,11 +5,7 @@ use crate::image_loading::pldm_context::State;
 use crate::image_loading::pldm_fdops::StreamingFdOps;
 use caliptra_mcu_flash_image::{FlashHeader, ImageHeader};
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-
 use caliptra_mcu_libsyscall_caliptra::dma::{AXIAddr, DMAMapping};
-use embassy_executor::Spawner;
-use embassy_sync::signal::Signal;
 
 use caliptra_mcu_libtock_platform::ErrorCode;
 
@@ -25,20 +21,11 @@ use super::pldm_context::{DOWNLOAD_CTX, PLDM_STATE};
 
 const MAX_IMAGE_COUNT: u32 = 127;
 
-pub static PLDM_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-pub static IMAGE_LOADING_TASK_YIELD: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-
-#[embassy_executor::task]
-async fn pldm_service_task(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
-    pldm_service(pldm_ops, spawner).await;
+fn get_pldm_state() -> State {
+    PLDM_STATE.lock(|state| *state.borrow())
 }
 
-pub async fn pldm_service(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
-    let mut pldm_service_init: PldmService = PldmService::init(pldm_ops, spawner);
-    pldm_service_init.start().await.unwrap();
-}
-
-async fn pldm_download_header() -> Result<(), ErrorCode> {
+fn pldm_download_header(service: &mut PldmService<'_>) -> Result<(), ErrorCode> {
     PLDM_STATE.lock(|state| {
         let mut state = state.borrow_mut();
         *state = State::DownloadingHeader;
@@ -51,9 +38,12 @@ async fn pldm_download_header() -> Result<(), ErrorCode> {
         ctx.total_downloaded = 0;
     });
 
-    PLDM_TASK_YIELD.signal(());
-    IMAGE_LOADING_TASK_YIELD.wait().await;
-    let state = PLDM_STATE.lock(|state| *state.borrow());
+    // Drive the PLDM service until header download completes
+    service
+        .run_until(|| get_pldm_state() == State::HeaderDownloadComplete)
+        .map_err(|_| ErrorCode::Fail)?;
+
+    let state = get_pldm_state();
     if state != State::HeaderDownloadComplete {
         return Err(ErrorCode::Fail);
     }
@@ -70,7 +60,7 @@ async fn pldm_download_header() -> Result<(), ErrorCode> {
     Ok(())
 }
 
-pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCode> {
+pub fn pldm_download_toc(service: &mut PldmService<'_>, component_id: u32) -> Result<(u32, u32), ErrorCode> {
     let num_images = DOWNLOAD_CTX.lock(|ctx| {
         let ctx = ctx.borrow();
         let (header, _rest) = FlashHeader::ref_from_prefix(&ctx.header).unwrap();
@@ -96,8 +86,14 @@ pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCod
 
         // Wait for TOC DownloadComplete to be ready
         loop {
-            PLDM_TASK_YIELD.signal(());
-            IMAGE_LOADING_TASK_YIELD.wait().await;
+            // Drive the service until TOC download completes
+            service
+                .run_until(|| {
+                    let s = get_pldm_state();
+                    s == State::TocDownloadComplete || s == State::ImageDownloadReady
+                })
+                .map_err(|_| ErrorCode::Fail)?;
+
             let is_dowload_complete = PLDM_STATE.lock(|state| {
                 let mut state = state.borrow_mut();
                 if *state == State::TocDownloadComplete {
@@ -133,7 +129,8 @@ pub async fn pldm_download_toc(component_id: u32) -> Result<(u32, u32), ErrorCod
     }
 }
 
-pub async fn pldm_download_image(
+pub fn pldm_download_image(
+    service: &mut PldmService<'_>,
     load_address: AXIAddr,
     offset: u32,
     size: u32,
@@ -152,21 +149,23 @@ pub async fn pldm_download_image(
         ctx.load_address = load_address;
     });
 
-    PLDM_TASK_YIELD.signal(());
-    IMAGE_LOADING_TASK_YIELD.wait().await;
-    let state = PLDM_STATE.lock(|state| *state.borrow());
+    // Drive the service until image download completes
+    service
+        .run_until(|| get_pldm_state() == State::ImageDownloadComplete)
+        .map_err(|_| ErrorCode::Fail)?;
+
+    let state = get_pldm_state();
     if state != State::ImageDownloadComplete {
         return Err(ErrorCode::Fail);
     }
     Ok(())
 }
 
-pub async fn initialize_pldm<'a, D: DMAMapping + 'static>(
-    spawner: Spawner,
+pub fn initialize_pldm<'a, D: DMAMapping + 'static>(
     descriptors: &'a [Descriptor],
     fw_params: &'a FirmwareParameters,
     dma_mapping: &'a D,
-) -> Result<(), ErrorCode> {
+) -> Result<PldmService<'a>, ErrorCode> {
     let is_initialiazed = PLDM_STATE.lock(|state| {
         let mut state = state.borrow_mut();
         if *state == State::NotRunning {
@@ -184,19 +183,23 @@ pub async fn initialize_pldm<'a, D: DMAMapping + 'static>(
         let stud_fd_ops: &'static mut StreamingFdOps<D> =
             unsafe { core::mem::transmute(&mut stud_fd_ops) };
 
-        spawner
-            .spawn(pldm_service_task(stud_fd_ops, spawner))
-            .unwrap();
+        let mut service = PldmService::init(stud_fd_ops);
 
-        IMAGE_LOADING_TASK_YIELD.wait().await;
-        let state = PLDM_STATE.lock(|state| *state.borrow());
+        // Drive the service until it reaches Initialized state
+        service
+            .run_until(|| get_pldm_state() == State::Initialized)
+            .map_err(|_| ErrorCode::Fail)?;
+
+        let state = get_pldm_state();
         if state != State::Initialized {
             return Err(ErrorCode::Fail);
         }
 
-        return pldm_download_header().await;
+        pldm_download_header(&mut service)?;
+        return Ok(service);
     }
-    Ok(())
+    // Already initialized — create a dummy service (shouldn't happen in practice)
+    Err(ErrorCode::Already)
 }
 
 pub fn finalize(verify_result: VerifyResult) -> Result<(), ErrorCode> {
@@ -205,6 +208,5 @@ pub fn finalize(verify_result: VerifyResult) -> Result<(), ErrorCode> {
         ctx.download_complete = true;
         ctx.verify_result = verify_result;
     });
-    PLDM_TASK_YIELD.signal(());
     Ok(())
 }

@@ -1,8 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::{share, DefaultConfig, ErrorCode, Syscalls};
-use caliptra_mcu_libtockasync::TockSubscribe;
+use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtockasync::blocking;
 use core::marker::PhantomData;
 
 pub struct MboxSram<S: Syscalls = DefaultSyscalls> {
@@ -18,60 +18,30 @@ impl<S: Syscalls> MboxSram<S> {
         }
     }
 
-    pub async fn write(&self, offset: usize, buffer: &[u8]) -> Result<(), ErrorCode> {
-        let res = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
-                self.driver_num,
-                upcall::DONE,
-                ro_allow::WRITE_BUFFER,
-                buffer,
-            );
-
-            // Issue the command to the kernel
-            match S::command(self.driver_num, cmd::MEMORY_WRITE, offset as u32, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                Ok(()) => Ok(TockSubscribe::subscribe_finish(sub)),
-                Err(err) => {
-                    S::unallow_ro(self.driver_num, ro_allow::WRITE_BUFFER);
-                    sub.cancel();
-                    Err(err)
-                }
-            }
-        })?
-        .await;
-        match res {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
+    pub fn write(&self, offset: usize, buffer: &[u8]) -> Result<(), ErrorCode> {
+        blocking::subscribe_allow_ro_and_wait::<S>(
+            self.driver_num,
+            upcall::DONE,
+            ro_allow::WRITE_BUFFER,
+            buffer,
+            cmd::MEMORY_WRITE,
+            offset as u32,
+            0,
+        )?;
+        Ok(())
     }
 
-    pub async fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), ErrorCode> {
-        let res = share::scope::<(), _, _>(|_handle| {
-            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
-                self.driver_num,
-                upcall::DONE,
-                rw_allow::READ_BUFFER,
-                buffer,
-            );
-
-            // Issue the command to the kernel
-            match S::command(self.driver_num, cmd::MEMORY_READ, offset as u32, 0)
-                .to_result::<(), ErrorCode>()
-            {
-                Ok(()) => Ok(TockSubscribe::subscribe_finish(sub)),
-                Err(err) => {
-                    S::unallow_rw(self.driver_num, rw_allow::READ_BUFFER);
-                    sub.cancel();
-                    Err(err)
-                }
-            }
-        })?
-        .await;
-        match res {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
+    pub fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<(), ErrorCode> {
+        blocking::subscribe_allow_rw_and_wait::<S>(
+            self.driver_num,
+            upcall::DONE,
+            rw_allow::READ_BUFFER,
+            buffer,
+            cmd::MEMORY_READ,
+            offset as u32,
+            0,
+        )?;
+        Ok(())
     }
 
     pub fn acquire_lock(&self) -> Result<(), ErrorCode> {

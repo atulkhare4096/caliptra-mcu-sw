@@ -2,11 +2,14 @@
 
 // MCTP Transport Implementation
 
+extern crate alloc;
 use crate::codec::MessageBuf;
 use crate::codec::{Codec, CommonCodec, DataKind};
 use crate::transport::common::{SpdmTransport, TransportError, TransportResult};
+use alloc::boxed::Box;
 use bitfield::bitfield;
 use caliptra_mcu_libsyscall_caliptra::mctp::{Mctp, MessageInfo};
+use caliptra_mcu_libtockasync::blocking::UpcallNotification;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const MCTP_MSG_HEADER_SIZE: usize = 1;
@@ -30,6 +33,7 @@ bitfield! {
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Immutable)]
 pub struct MctpMsgHdr(MSB0 [u8]);
+impl Debug;
 u8;
     pub ic, set_ic: 0,0;
     pub msg_type, set_msg_type: 7, 0;
@@ -66,10 +70,24 @@ impl MctpTransport {
             cur_req_ctx: None,
         }
     }
+
+    /// Set up a non-blocking receive-request operation.
+    ///
+    /// Must be called BEFORE passing this transport to `SpdmContext::new()`,
+    /// since the context borrows the transport exclusively.
+    pub fn setup_non_blocking(
+        &mut self,
+        buf: &'static mut [u8],
+        notify: &'static UpcallNotification,
+    ) -> TransportResult<()> {
+        self.mctp
+            .setup_receive_request(buf, notify)
+            .map_err(TransportError::DriverError)
+    }
 }
 
 impl SpdmTransport for MctpTransport {
-    async fn send_request<'a>(
+    fn send_request<'a>(
         &mut self,
         dest_eid: u8,
         req: &mut MessageBuf<'a>,
@@ -89,7 +107,7 @@ impl SpdmTransport for MctpTransport {
         let tag = self
             .mctp
             .send_request(dest_eid, req_buf)
-            .await
+            
             .map_err(TransportError::DriverError)?;
 
         self.cur_req_ctx = Some(tag);
@@ -97,7 +115,7 @@ impl SpdmTransport for MctpTransport {
         Ok(())
     }
 
-    async fn receive_response<'a>(&mut self, rsp: &mut MessageBuf<'a>) -> TransportResult<bool> {
+    fn receive_response<'a>(&mut self, rsp: &mut MessageBuf<'a>) -> TransportResult<bool> {
         rsp.reset();
 
         let max_len = rsp.capacity();
@@ -107,7 +125,7 @@ impl SpdmTransport for MctpTransport {
         let (rsp_len, _msg_info) = if let Some(tag) = self.cur_req_ctx {
             self.mctp
                 .receive_response(rsp_buf, tag, 0)
-                .await
+                
                 .map_err(TransportError::DriverError)
         } else {
             Err(TransportError::ResponseNotExpected)
@@ -138,7 +156,7 @@ impl SpdmTransport for MctpTransport {
         Ok(false)
     }
 
-    async fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool> {
+    fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool> {
         req.reset();
 
         let max_len = req.capacity();
@@ -149,7 +167,7 @@ impl SpdmTransport for MctpTransport {
         let (req_len, msg_info) = self
             .mctp
             .receive_request(data_buf)
-            .await
+            
             .map_err(TransportError::DriverError)?;
 
         if req_len == 0 {
@@ -176,7 +194,7 @@ impl SpdmTransport for MctpTransport {
         Ok(false)
     }
 
-    async fn send_response<'a>(
+    fn send_response<'a>(
         &mut self,
         resp: &mut MessageBuf<'a>,
         _secure: bool,
@@ -194,7 +212,7 @@ impl SpdmTransport for MctpTransport {
         if let Some(msg_info) = self.cur_resp_ctx.clone() {
             self.mctp
                 .send_response(rsp_buf, msg_info)
-                .await
+                
                 .map_err(TransportError::DriverError)?
         } else {
             Err(TransportError::NoRequestInFlight)?;
@@ -215,5 +233,43 @@ impl SpdmTransport for MctpTransport {
 
     fn header_size(&self) -> usize {
         MCTP_MSG_HEADER_SIZE
+    }
+
+    fn receive_from_buffer<'a>(
+        &mut self,
+        req: &mut MessageBuf<'a>,
+        nb_buf: &[u8],
+        upcall_args: (u32, u32, u32),
+    ) -> TransportResult<bool> {
+        let (recv_len_raw, _, msg_info_raw) = upcall_args;
+        let recv_len = recv_len_raw as usize;
+        if recv_len == 0 {
+            return Err(TransportError::InvalidMessage);
+        }
+
+        req.reset();
+        req.put_data(recv_len).map_err(TransportError::Codec)?;
+        let data = req.data_mut(recv_len).map_err(TransportError::Codec)?;
+        data.copy_from_slice(&nb_buf[..recv_len]);
+        req.trim(recv_len).map_err(TransportError::Codec)?;
+
+        let header = MctpMsgHdr::decode(req).map_err(TransportError::Codec)?;
+        if header.msg_type()
+            != self
+                .mctp
+                .msg_type()
+                .map_err(|_| TransportError::UnexpectedMessageType)?
+        {
+            return Err(TransportError::UnexpectedMessageType);
+        }
+
+        self.cur_resp_ctx = Some(msg_info_raw.into());
+        Ok(false)
+    }
+
+    fn rearm_receive(&self) -> TransportResult<()> {
+        self.mctp
+            .arm_receive_request()
+            .map_err(TransportError::DriverError)
     }
 }

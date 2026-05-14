@@ -11,7 +11,7 @@ use super::dma_transfer::DmaTransfer;
 
 const FLASH_HEADER_OFFSET: usize = 0;
 
-pub async fn flash_read_header(
+pub fn flash_read_header(
     flash: &FlashSyscall,
     header: &mut [u8; core::mem::size_of::<FlashHeader>()],
 ) -> Result<(), ErrorCode> {
@@ -21,11 +21,11 @@ pub async fn flash_read_header(
             core::mem::size_of::<FlashHeader>(),
             header,
         )
-        .await?;
+        ?;
     Ok(())
 }
 
-pub async fn flash_read_toc(
+pub fn flash_read_toc(
     flash: &FlashSyscall,
     header: &[u8; core::mem::size_of::<FlashHeader>()],
     component_id: u32,
@@ -37,7 +37,7 @@ pub async fn flash_read_toc(
         let buffer = &mut [0u8; core::mem::size_of::<ImageHeader>()];
         flash
             .read(flash_offset, core::mem::size_of::<ImageHeader>(), buffer)
-            .await?;
+            ?;
         let (image_header, _) =
             ImageHeader::ref_from_prefix(buffer).map_err(|_| ErrorCode::Fail)?;
         if image_header.identifier == component_id {
@@ -48,7 +48,7 @@ pub async fn flash_read_toc(
     Err(ErrorCode::Fail)
 }
 
-pub async fn flash_load_image(
+pub fn flash_load_image(
     dma_transfer: &impl DmaTransfer,
     load_address: AXIAddr,
     offset: usize,
@@ -63,7 +63,7 @@ pub async fn flash_load_image(
         let transfer_size = remaining_size.min(max_xfer);
         dma_transfer
             .transfer(current_offset, current_address, transfer_size)
-            .await?;
+            ?;
         remaining_size -= transfer_size;
         current_offset += transfer_size;
         current_address += transfer_size as u64;

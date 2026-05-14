@@ -2,11 +2,9 @@
 
 extern crate alloc;
 
-use super::pldm_client::{FW_UPDATE_TASK_YIELD, PLDM_DAEMON_TASK_YIELD};
 use super::pldm_context::{State, DOWNLOAD_CTX, PLDM_STATE};
 use crate::MAX_PLDM_TRANSFER_SIZE;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_flash_image::{FlashHeader, ImageHeader};
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
@@ -29,7 +27,7 @@ impl UpdateFdOps {
         Self {}
     }
 
-    async fn copy_data_to_buffer(&self, _offset: usize, data: &[u8]) -> Result<(), FdOpsError> {
+    fn copy_data_to_buffer(&self, _offset: usize, data: &[u8]) -> Result<(), FdOpsError> {
         let state = PLDM_STATE.lock(|state| *state.borrow());
         if state != State::DownloadingImage {
             return Err(FdOpsError::FwDownloadError);
@@ -43,14 +41,13 @@ impl UpdateFdOps {
         if let Some(staging_area) = staging_memory {
             return staging_area
                 .write(write_offset, data)
-                .await
+                
                 .map_err(|_| FdOpsError::FwDownloadError);
         }
         Err(FdOpsError::FwDownloadError)
     }
 }
 
-#[async_trait(?Send)]
 impl FdOps for UpdateFdOps {
     fn get_device_identifiers(
         &self,
@@ -83,7 +80,7 @@ impl FdOps for UpdateFdOps {
         }
     }
 
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
+    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
         Ok(ua_transfer_size.min(MAX_PLDM_TRANSFER_SIZE))
     }
 
@@ -121,7 +118,7 @@ impl FdOps for UpdateFdOps {
         Ok(component.evaluate_update_eligibility(fw_params))
     }
 
-    async fn query_download_offset_and_length(
+    fn query_download_offset_and_length(
         &self,
         _component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
@@ -142,13 +139,13 @@ impl FdOps for UpdateFdOps {
         Ok((offset, request_length))
     }
 
-    async fn download_fw_data(
+    fn download_fw_data(
         &self,
         offset: usize,
         data: &[u8],
         _component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
-        self.copy_data_to_buffer(offset, data).await?;
+        self.copy_data_to_buffer(offset, data)?;
         // update self.download_ctx
         DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
@@ -180,42 +177,32 @@ impl FdOps for UpdateFdOps {
         Ok(())
     }
 
-    async fn verify(
+    fn verify(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<VerifyResult, FdOpsError> {
-        // Transition to Verify state
+        // Transition to Verify state — the caller's run_until will see this
         PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             *state = State::Verifying;
         });
-        // Pass control to firmware update task
-        FW_UPDATE_TASK_YIELD.signal(());
-
-        // Wait for the firmware update task to complete verification
-        PLDM_DAEMON_TASK_YIELD.wait().await;
 
         *progress_percent = ProgressPercent::new(100).unwrap();
         let verify_result = DOWNLOAD_CTX.lock(|ctx| ctx.borrow().verify_result);
         Ok(verify_result)
     }
 
-    async fn apply(
+    fn apply(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError> {
-        // Transition to Verify state
+        // Transition to Apply state — the caller's run_until will see this
         PLDM_STATE.lock(|state| {
             let mut state = state.borrow_mut();
             *state = State::Apply;
         });
-        // Pass control to firmware update task
-        FW_UPDATE_TASK_YIELD.signal(());
-
-        // Wait for the firmware update task to complete verification
-        PLDM_DAEMON_TASK_YIELD.wait().await;
 
         *progress_percent = ProgressPercent::new(100).unwrap();
         let apply_result = DOWNLOAD_CTX.lock(|ctx| ctx.borrow().apply_result);
@@ -237,7 +224,6 @@ impl FdOps for UpdateFdOps {
             let mut state = state.borrow_mut();
             *state = State::Activate;
         });
-        FW_UPDATE_TASK_YIELD.signal(());
         Ok(0) // PLDM completion code for success
     }
 }

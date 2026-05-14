@@ -100,12 +100,13 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct MeasurementSpecification(u8);
+impl Debug;
 u8;
 pub dmtf_measurement_spec, set_dmtf_measurement_spec: 0,0;
 reserved, _: 7,1;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum MeasurementSpecificationType {
     DmtfMeasurementSpec,
 }
@@ -123,6 +124,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct OtherParamSupport(u8);
+impl Debug;
 u8;
 pub opaque_data_fmt0, set_opaque_data_fmt0: 0,0;
 pub opaque_data_fmt1, set_opaque_data_fmt1: 1,1;
@@ -141,7 +143,7 @@ impl From<OpaqueDataFormatType> for u8 {
 }
 
 // Opaque Data Format field type
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum OpaqueDataFormatType {
     // Opaque Data Format 0
     OpaqueDataFmt0,
@@ -154,6 +156,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct MeasurementHashAlgo(u32);
+impl Debug;
 u8;
 pub raw_bit_stream, set_raw_bit_stream: 0,0;
 pub tpm_alg_sha_256, set_tpm_alg_sha_256: 1,1;
@@ -171,6 +174,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct BaseAsymAlgo(u32);
+impl Debug;
 u8;
 pub tpm_alg_rsassa_2048, set_tpm_alg_rsassa_2048: 0,0;
 pub tpm_alg_rsapss_2048, set_tpm_alg_rsapss_2048: 1,1;
@@ -206,7 +210,7 @@ impl From<BaseAsymAlgoType> for u32 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum BaseAsymAlgoType {
     TpmAlgRsassa2048,
     TpmAlgRsapss2048,
@@ -227,6 +231,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct BaseHashAlgo(u32);
+impl Debug;
 u8;
 pub tpm_alg_sha_256, set_tpm_alg_sha_256: 0,0;
 pub tpm_alg_sha_384, set_tpm_alg_sha_384: 1,1;
@@ -273,7 +278,7 @@ impl Prioritize<BaseHashAlgoType> for BaseHashAlgo {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum BaseHashAlgoType {
     TpmAlgSha256,
     TpmAlgSha384,
@@ -317,12 +322,13 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct MelSpecification(u8);
+impl Debug;
 u8;
 pub dmtf_mel_spec, set_dmtf_mel_spec: 0,0;
 reserved, _: 7,1;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum MelSpecificationType {
     DmtfMelSpec,
 }
@@ -340,6 +346,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct DheNamedGroup(u16);
+impl Debug;
 u8;
 pub ffdhe2048, set_ffdhe2048: 0,0;
 pub ffdhe3072, set_ffdhe3072: 1,1;
@@ -366,7 +373,7 @@ impl From<DheGroupType> for u16 {
 }
 
 // AlgSupported type for DHE group
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum DheGroupType {
     // ffdhe2048
     Ffdhe2048,
@@ -389,6 +396,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct AeadCipherSuite(u16);
+impl Debug;
 u8;
 pub aes128_gcm, set_aes128_gcm: 0,0;
 pub aes256_gcm, set_aes256_gcm: 1,1;
@@ -409,7 +417,7 @@ impl From<AeadCipherSuiteType> for u16 {
 }
 
 // AlgSupported type for AEAD cipher suite
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum AeadCipherSuiteType {
     // AES-128-GCM
     Aes128Gcm,
@@ -426,6 +434,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct ReqBaseAsymAlg(u16);
+impl Debug;
 u8;
 pub tpm_alg_rsa_ssa_2048, set_tpm_alg_rsa_ssa_2048: 0,0;
 pub tpm_alg_rsa_pss_2048, set_tpm_alg_rsa_pss_2048: 1,1;
@@ -462,7 +471,7 @@ impl From<ReqBaseAsymAlgType> for u16 {
 }
 
 // AlgSupported type for Request Base Asym Algorithm
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ReqBaseAsymAlgType {
     // TPM_ALG_RSASSA_2048
     TpmAlgRsaSsa2048,
@@ -495,6 +504,7 @@ bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
 #[repr(C)]
 pub struct KeySchedule(u16);
+impl Debug;
 u8;
 pub spdm_key_schedule, set_spdm_key_schedule: 0,0;
 pub reserved, _: 15,1;
@@ -508,13 +518,13 @@ impl From<KeyScheduleType> for u16 {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum KeyScheduleType {
     // SPDM Key Schedule
     SpdmKeySchedule,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DeviceAlgorithms {
     pub measurement_spec: MeasurementSpecification,
     pub other_param_support: OtherParamSupport,

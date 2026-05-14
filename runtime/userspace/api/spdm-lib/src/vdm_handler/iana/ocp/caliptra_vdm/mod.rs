@@ -11,7 +11,6 @@ use crate::vdm_handler::iana::ocp::caliptra_vdm::commands::{
 use crate::vdm_handler::iana::ocp::caliptra_vdm::protocol::*;
 use crate::vdm_handler::{VdmError, VdmHandler, VdmRegistryMatcher, VdmResponder, VdmResult};
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_common_commands::CaliptraCmdHandler;
 use core::mem::size_of;
 
@@ -40,9 +39,8 @@ impl VdmRegistryMatcher for CaliptraVdmHandler<'_> {
     }
 }
 
-#[async_trait(?Send)]
 impl VdmResponder for CaliptraVdmHandler<'_> {
-    async fn handle_request(
+    fn handle_request(
         &mut self,
         req_buf: &mut MessageBuf<'_>,
         rsp_buf: &mut MessageBuf<'_>,
@@ -63,17 +61,17 @@ impl VdmResponder for CaliptraVdmHandler<'_> {
 
         let result = match command {
             CaliptraVdmCommand::FirmwareVersion => {
-                firmware_version::handle_firmware_version(self.handler, req_buf, rsp_buf).await?
+                firmware_version::handle_firmware_version(self.handler, req_buf, rsp_buf)?
             }
             CaliptraVdmCommand::DeviceCapabilities => {
                 device_capabilities::handle_device_capabilities(self.handler, req_buf, rsp_buf)
-                    .await?
+                    ?
             }
             CaliptraVdmCommand::DeviceId => {
-                device_id::handle_device_id(self.handler, req_buf, rsp_buf).await?
+                device_id::handle_device_id(self.handler, req_buf, rsp_buf)?
             }
             CaliptraVdmCommand::DeviceInfo => {
-                device_info::handle_device_info(self.handler, req_buf, rsp_buf).await?
+                device_info::handle_device_info(self.handler, req_buf, rsp_buf)?
             }
             CaliptraVdmCommand::ExportAttestedCsr => {
                 export_attested_csr::handle_export_attested_csr(
@@ -82,7 +80,7 @@ impl VdmResponder for CaliptraVdmHandler<'_> {
                     rsp_buf,
                     large_rsp_buf,
                 )
-                .await?
+                ?
             }
             CaliptraVdmCommand::ExportIdevidCsr => {
                 export_idevid_csr::handle_export_idevid_csr(
@@ -91,7 +89,7 @@ impl VdmResponder for CaliptraVdmHandler<'_> {
                     rsp_buf,
                     large_rsp_buf,
                 )
-                .await?
+                ?
             }
             _ => CaliptraVdmCmdResult::ErrorResponse(CaliptraCompletionCode::UnsupportedOperation),
         };

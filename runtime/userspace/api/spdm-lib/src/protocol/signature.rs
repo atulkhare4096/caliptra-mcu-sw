@@ -12,6 +12,7 @@ pub const SPDM_SIGNING_CONTEXT_LEN: usize = SPDM_PREFIX_LEN + SPDM_CONTEXT_LEN;
 pub const SPDM_PREFIX_LEN: usize = 64;
 pub const SPDM_CONTEXT_LEN: usize = 36;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum SignCtxError {
     UnsupportedVersion,
@@ -20,6 +21,7 @@ pub enum SignCtxError {
     CaliptraApi(CaliptraApiError),
 }
 
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for SignCtxError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("SignCtxError")
@@ -62,7 +64,7 @@ pub(crate) fn create_responder_signing_context(
     Ok(combined_spdm_prefix)
 }
 
-pub(crate) async fn get_tbs_via_response_code(
+pub(crate) fn get_tbs_via_response_code(
     spdm_version: SpdmVersion,
     resp_code: ReqRespCode,
     transcript_hash: [u8; SHA384_HASH_SIZE],
@@ -83,12 +85,12 @@ pub(crate) async fn get_tbs_via_response_code(
 
     hash_ctx
         .init(HashAlgoType::SHA384, Some(&message))
-        .await
+        
         .map_err(SignCtxError::CaliptraApi)?;
 
     hash_ctx
         .finalize(&mut tbs)
-        .await
+        
         .map_err(SignCtxError::CaliptraApi)?;
     Ok(tbs)
 }

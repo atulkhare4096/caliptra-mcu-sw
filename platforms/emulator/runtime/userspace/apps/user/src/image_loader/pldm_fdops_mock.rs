@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use caliptra_mcu_pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use caliptra_mcu_pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -18,9 +17,8 @@ use caliptra_mcu_pldm_common::protocol::firmware_update::{
 use caliptra_mcu_pldm_common::util::fw_component::FirmwareComponent;
 use caliptra_mcu_pldm_lib::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use core::cell::RefCell;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::lazy_lock::LazyLock;
-use embassy_sync::signal::Signal;
+use core::sync::atomic::{AtomicBool, Ordering};
+use caliptra_mcu_libtockasync::blocking::SyncLazy;
 
 const FD_DESCRIPTORS_COUNT: usize = 1;
 const FD_FW_COMPONENTS_COUNT: usize = 1;
@@ -30,12 +28,12 @@ const UUID: [u8; 16] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
 ];
 
-static DESCRIPTORS: LazyLock<[Descriptor; FD_DESCRIPTORS_COUNT]> =
-    LazyLock::new(|| [Descriptor::new(DescriptorType::Uuid, &UUID).unwrap()]);
+static DESCRIPTORS: SyncLazy<[Descriptor; FD_DESCRIPTORS_COUNT]> =
+    SyncLazy::new(|| [Descriptor::new(DescriptorType::Uuid, &UUID).unwrap()]);
 
 // This is dummy firmware parameter for development. The actual firmware parameters are
 // retrieved from the SoC manifest via mailbox commands.
-static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
+static FIRMWARE_PARAMS: SyncLazy<FirmwareParameters> = SyncLazy::new(|| {
     let active_firmware_string = PldmFirmwareString::new("UTF-8", "soc-fw-1.0").unwrap();
     let active_firmware_version =
         PldmFirmwareVersion::new(0x12345678, &active_firmware_string, Some("20250210"));
@@ -62,7 +60,7 @@ static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
     )
 });
 
-static PLDM_DONE_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static PLDM_DONE: AtomicBool = AtomicBool::new(false);
 
 // This is the maximum time in seconds that UA will wait for self-activation. It is a test value for development.
 static TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS: u16 = 20;
@@ -95,12 +93,15 @@ impl FdOpsObject {
             apply_ctx: RefCell::new(ProgressPercent::default()),
         }
     }
-    pub async fn wait_for_pldm_done() {
-        PLDM_DONE_SIGNAL.wait().await;
+    pub fn wait_for_pldm_done() {
+        use caliptra_mcu_libtock_platform::Syscalls;
+        use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
+        while !PLDM_DONE.load(Ordering::SeqCst) {
+            DefaultSyscalls::yield_wait();
+        }
     }
 }
 
-#[async_trait(?Send)]
 impl FdOps for FdOpsObject {
     fn get_device_identifiers(
         &self,
@@ -124,7 +125,7 @@ impl FdOps for FdOpsObject {
         Ok(())
     }
 
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
+    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
         Ok(PLDM_FWUP_BASELINE_TRANSFER_SIZE
             .max(ua_transfer_size.min(caliptra_mcu_pldm_lib::config::FD_MAX_XFER_SIZE)))
     }
@@ -147,7 +148,7 @@ impl FdOps for FdOpsObject {
         Ok(comp_resp_code)
     }
 
-    async fn query_download_offset_and_length(
+    fn query_download_offset_and_length(
         &self,
         component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
@@ -162,7 +163,7 @@ impl FdOps for FdOpsObject {
         }
     }
 
-    async fn download_fw_data(
+    fn download_fw_data(
         &self,
         offset: usize,
         data: &[u8],
@@ -206,7 +207,7 @@ impl FdOps for FdOpsObject {
         Ok(())
     }
 
-    async fn verify(
+    fn verify(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -224,7 +225,7 @@ impl FdOps for FdOpsObject {
         Ok(VerifyResult::VerifySuccess)
     }
 
-    async fn apply(
+    fn apply(
         &self,
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
@@ -249,7 +250,7 @@ impl FdOps for FdOpsObject {
         if self_contained_activation == 1 {
             *estimated_time = TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS;
         }
-        PLDM_DONE_SIGNAL.signal(());
+        PLDM_DONE.store(true, Ordering::SeqCst);
         Ok(0) // PLDM completion code for success
     }
 

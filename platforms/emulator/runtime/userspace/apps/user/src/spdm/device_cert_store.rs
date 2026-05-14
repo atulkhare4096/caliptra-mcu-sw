@@ -1,17 +1,19 @@
 // Licensed under the Apache-2.0 license
 
+extern crate alloc;
+
 use crate::spdm::cert_store::cert_chain::device::DeviceCertIndex;
 use crate::spdm::cert_store::cert_chain::CertChain;
 use crate::spdm::cert_store::DeviceCertStore;
 use crate::spdm::endorsement_certs::EndorsementCertChain;
+use alloc::boxed::Box;
 use caliptra_mcu_libapi_caliptra::crypto::asym::{AsymAlgo, ECC_P384_SIGNATURE_SIZE};
 use caliptra_mcu_libapi_caliptra::crypto::hash::SHA384_HASH_SIZE;
 use caliptra_mcu_spdm_lib::cert_store::{CertStoreError, CertStoreResult, SpdmCertStore};
 use caliptra_mcu_spdm_lib::protocol::{CertificateInfo, KeyUsageMask};
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::mutex::Mutex;
+use caliptra_mcu_libtockasync::blocking::SyncMutex;
 
 /// Static storage just for the endorsement chain (since it needs static lifetime)
 static mut SLOT0_ENDORSEMENT: MaybeUninit<EndorsementCertChain> = MaybeUninit::uninit();
@@ -20,11 +22,11 @@ static mut SLOT0_ENDORSEMENT: MaybeUninit<EndorsementCertChain> = MaybeUninit::u
 static SLOT0_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Static storage for the shared certificate store
-static SHARED_CERT_STORE: Mutex<CriticalSectionRawMutex, Option<DeviceCertStore>> =
-    Mutex::new(None);
+static SHARED_CERT_STORE: SyncMutex<Option<DeviceCertStore>> =
+    SyncMutex::new(None);
 
 /// Initialize the endorsement chain for a specific slot
-async fn init_endorsement_cert_chain(
+fn init_endorsement_cert_chain(
     slot_id: u8,
 ) -> CertStoreResult<&'static mut EndorsementCertChain<'static>> {
     match slot_id {
@@ -38,7 +40,7 @@ async fn init_endorsement_cert_chain(
             }
 
             // Create the endorsement chain
-            let endorsement_chain = EndorsementCertChain::new(0).await?;
+            let endorsement_chain = EndorsementCertChain::new(0)?;
 
             // SAFETY: This unsafe block is safe because:
             // 1. We use atomic operations to ensure single initialization
@@ -66,15 +68,15 @@ async fn init_endorsement_cert_chain(
     }
 }
 
-pub async fn initialize_shared_cert_store(cert_store: DeviceCertStore) -> CertStoreResult<()> {
-    let mut shared_store = SHARED_CERT_STORE.lock().await;
+pub fn initialize_shared_cert_store(cert_store: DeviceCertStore) -> CertStoreResult<()> {
+    let mut shared_store = SHARED_CERT_STORE.lock();
     *shared_store = Some(cert_store);
     Ok(())
 }
 
-pub async fn initialize_cert_store() -> CertStoreResult<()> {
+pub fn initialize_cert_store() -> CertStoreResult<()> {
     // Initialize the endorsement chain for slot 0 and get a static mutable reference
-    let slot0_endorsement_ref = init_endorsement_cert_chain(0).await?;
+    let slot0_endorsement_ref = init_endorsement_cert_chain(0)?;
 
     // Create cert chain with the static reference
     let slot0_cert_chain = CertChain::new(slot0_endorsement_ref, DeviceCertIndex::IdevId);
@@ -83,7 +85,7 @@ pub async fn initialize_cert_store() -> CertStoreResult<()> {
     let mut cert_store = DeviceCertStore::new();
     cert_store.set_cert_chain(0, slot0_cert_chain)?;
 
-    initialize_shared_cert_store(cert_store).await?;
+    initialize_shared_cert_store(cert_store)?;
     Ok(())
 }
 
@@ -99,16 +101,13 @@ impl SharedCertStore {
 
 impl SpdmCertStore for SharedCertStore {
     fn slot_count(&self) -> u8 {
-        // Try to lock the shared certificate store and get the slot count.
-        // If the store is not initialized or the lock cannot be acquired, return 0.
-        match SHARED_CERT_STORE.try_lock() {
-            Ok(store) => store.as_ref().map_or(0, |s| s.slot_count()),
-            Err(_) => 0,
-        }
+        // Single-threaded: lock always succeeds
+        let store = SHARED_CERT_STORE.lock();
+        store.as_ref().map_or(0, |s| s.slot_count())
     }
 
-    async fn is_provisioned(&self, slot: u8) -> bool {
-        let cert_store = SHARED_CERT_STORE.lock().await;
+    fn is_provisioned(&self, slot: u8) -> bool {
+        let cert_store = SHARED_CERT_STORE.lock();
         if let Some(cert_store) = cert_store.as_ref() {
             cert_store.is_provisioned(slot)
         } else {
@@ -116,78 +115,78 @@ impl SpdmCertStore for SharedCertStore {
         }
     }
 
-    async fn cert_chain_len(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<usize> {
-        let mut cert_store = SHARED_CERT_STORE.lock().await;
+    fn cert_chain_len(&self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<usize> {
+        let mut cert_store = SHARED_CERT_STORE.lock();
         if let Some(cert_store) = cert_store.as_mut() {
-            cert_store.cert_chain_len(asym_algo, slot_id).await
+            cert_store.cert_chain_len(asym_algo, slot_id)
         } else {
             Err(CertStoreError::NotInitialized)
         }
     }
 
-    async fn get_cert_chain<'a>(
+    fn get_cert_chain<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
         offset: usize,
         cert_portion: &'a mut [u8],
     ) -> CertStoreResult<usize> {
-        let mut cert_store = SHARED_CERT_STORE.lock().await;
+        let mut cert_store = SHARED_CERT_STORE.lock();
         if let Some(cert_store) = cert_store.as_mut() {
             cert_store
                 .get_cert_chain(slot_id, asym_algo, offset, cert_portion)
-                .await
+                
         } else {
             Err(CertStoreError::NotInitialized)
         }
     }
 
-    async fn root_cert_hash<'a>(
+    fn root_cert_hash<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
         cert_hash: &'a mut [u8; SHA384_HASH_SIZE],
     ) -> CertStoreResult<()> {
-        let cert_store = SHARED_CERT_STORE.lock().await;
+        let cert_store = SHARED_CERT_STORE.lock();
         if let Some(cert_store) = cert_store.as_ref() {
             cert_store
                 .root_cert_hash(slot_id, asym_algo, cert_hash)
-                .await
+                
         } else {
             Err(CertStoreError::NotInitialized)
         }
     }
 
-    async fn sign_hash<'a>(
+    fn sign_hash<'a>(
         &self,
         asym_algo: AsymAlgo,
         slot_id: u8,
         hash: &'a [u8; SHA384_HASH_SIZE],
         signature: &'a mut [u8; ECC_P384_SIGNATURE_SIZE],
     ) -> CertStoreResult<()> {
-        let cert_store = SHARED_CERT_STORE.lock().await;
+        let cert_store = SHARED_CERT_STORE.lock();
         if let Some(cert_store) = cert_store.as_ref() {
             cert_store
                 .sign_hash(asym_algo, slot_id, hash, signature)
-                .await
+                
         } else {
             Err(CertStoreError::NotInitialized)
         }
     }
 
-    async fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
+    fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
         None
     }
 
-    async fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
+    fn cert_info(&self, _slot_id: u8) -> Option<CertificateInfo> {
         None
     }
 
-    async fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
+    fn key_usage_mask(&self, _slot_id: u8) -> Option<KeyUsageMask> {
         None
     }
 
-    async fn write_cert_chain(
+    fn write_cert_chain(
         &self,
         _asym_algo: AsymAlgo,
         _slot_id: u8,
@@ -198,7 +197,7 @@ impl SpdmCertStore for SharedCertStore {
         Err(CertStoreError::OperationFailed)
     }
 
-    async fn erase_cert_chain(&self, _asym_algo: AsymAlgo, _slot_id: u8) -> CertStoreResult<()> {
+    fn erase_cert_chain(&self, _asym_algo: AsymAlgo, _slot_id: u8) -> CertStoreResult<()> {
         Err(CertStoreError::OperationFailed)
     }
 }

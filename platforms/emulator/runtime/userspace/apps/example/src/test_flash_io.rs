@@ -23,7 +23,7 @@ struct FlashTestConfig<'a> {
 }
 
 #[cfg(feature = "test-flash-usermode")]
-pub async fn test_flash_usermode_emulator() {
+pub fn test_flash_usermode_emulator() {
     let mut user_r_buf: [u8; BUF_LEN] = [0u8; BUF_LEN];
     // Fill the write buffer with a pattern
     let user_w_buf: [u8; BUF_LEN] = {
@@ -46,7 +46,7 @@ pub async fn test_flash_usermode_emulator() {
         w_buf: &user_w_buf,
         r_buf: &mut user_r_buf,
     };
-    simple_test(&mut test_cfg_1).await;
+    simple_test(&mut test_cfg_1);
 
     let mut test_cfg_2 = FlashTestConfig {
         drv_num: IMAGE_B_PARTITION.driver_num,
@@ -60,11 +60,11 @@ pub async fn test_flash_usermode_emulator() {
         w_buf: &user_w_buf,
         r_buf: &mut user_r_buf,
     };
-    simple_test(&mut test_cfg_2).await;
+    simple_test(&mut test_cfg_2);
 }
 
 #[cfg(feature = "test-fpga-flash-ctrl")]
-pub async fn test_flash_usermode_fpga() {
+pub fn test_flash_usermode_fpga() {
     let mut user_r_buf: [u8; BUF_LEN] = [0u8; BUF_LEN];
     // Fill the write buffer with a pattern
     let user_w_buf: [u8; BUF_LEN] = {
@@ -87,10 +87,10 @@ pub async fn test_flash_usermode_fpga() {
         w_buf: &user_w_buf,
         r_buf: &mut user_r_buf,
     };
-    simple_test(&mut test_cfg_1).await;
+    simple_test(&mut test_cfg_1);
 }
 
-async fn simple_test<'a>(test_cfg: &'a mut FlashTestConfig<'a>) {
+fn simple_test<'a>(test_cfg: &'a mut FlashTestConfig<'a>) {
     let flash_par: SpiFlash = SpiFlash::new(test_cfg.drv_num);
     assert_eq!(
         flash_par.get_capacity().unwrap(),
@@ -101,13 +101,13 @@ async fn simple_test<'a>(test_cfg: &'a mut FlashTestConfig<'a>) {
         test_cfg.expected_chunk_size
     );
 
-    let ret = flash_par.erase(test_cfg.e_offset, test_cfg.e_len).await;
+    let ret = flash_par.erase(test_cfg.e_offset, test_cfg.e_len);
     assert_eq!(ret, Ok(()));
 
     // Write test region partially
     let ret = flash_par
         .write(test_cfg.w_offset, test_cfg.w_len, test_cfg.w_buf as &[u8])
-        .await;
+        ;
     assert_eq!(ret, Ok(()));
 
     // Read the written region
@@ -117,7 +117,7 @@ async fn simple_test<'a>(test_cfg: &'a mut FlashTestConfig<'a>) {
             test_cfg.w_len,
             test_cfg.r_buf as &mut [u8],
         )
-        .await;
+        ;
     assert_eq!(ret, Ok(()));
 
     // Data compare read and write
@@ -139,7 +139,7 @@ async fn simple_test<'a>(test_cfg: &'a mut FlashTestConfig<'a>) {
             test_cfg.e_len,
             test_cfg.r_buf as &mut [u8],
         )
-        .await;
+        ;
     assert_eq!(ret, Ok(()));
 
     // Data integrity check

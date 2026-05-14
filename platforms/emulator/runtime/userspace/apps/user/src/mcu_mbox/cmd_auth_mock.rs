@@ -1,5 +1,4 @@
 // Licensed under the Apache-2.0 license
-use async_trait::async_trait;
 use caliptra_mcu_common_commands::{AuthorizationError, AuthorizationResult, CommandAuthorizer};
 use caliptra_mcu_libapi_caliptra::crypto::hmac::Hmac;
 use caliptra_mcu_libapi_caliptra::crypto::import::{CmKeyUsage, Import};
@@ -28,9 +27,8 @@ pub struct MockCommandAuthorizer {
     challenge: Option<[u8; 32]>,
 }
 
-#[async_trait(?Send)]
 impl CommandAuthorizer for MockCommandAuthorizer {
-    async fn is_authorized<'a>(
+    fn is_authorized<'a>(
         &mut self,
         cmd_id: CommandId,
         req: &'a [u8],
@@ -53,7 +51,7 @@ impl CommandAuthorizer for MockCommandAuthorizer {
 
         // Import the key using Caliptra API
         let import_resp = Import::import(CmKeyUsage::Hmac, &TEST_AUTH_CMD_HMAC_KEY)
-            .await
+            
             .map_err(|_| AuthorizationError)?;
         let cmk = import_resp.cmk;
 
@@ -70,7 +68,7 @@ impl CommandAuthorizer for MockCommandAuthorizer {
 
         // Compute HMAC using Caliptra API
         let hmac_resp = Hmac::hmac(&cmk, buf.as_slice())
-            .await
+            
             .map_err(|_| AuthorizationError)?;
 
         let computed_mac_all = hmac_resp.mac.as_bytes();

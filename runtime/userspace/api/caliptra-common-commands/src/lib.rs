@@ -5,7 +5,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_mbox_common::messages::CommandId;
 use zerocopy::{Immutable, IntoBytes};
 
@@ -103,7 +102,6 @@ pub struct DeviceCapabilities {
 ///
 /// Each function represents a transport-agnostic command handler. Implementors should provide
 /// the specific logic for each command as required by their application.
-#[async_trait]
 pub trait CaliptraCmdHandler: Send + Sync {
     /// Retrieves the firmware version for the given index.
     ///
@@ -113,7 +111,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<()>` - Ok on success, or an error.
-    async fn get_firmware_version(
+    fn get_firmware_version(
         &self,
         index: u32,
         version: &mut FirmwareVersion,
@@ -126,7 +124,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<()>` - Ok on success, or an error.
-    async fn get_device_id(&self, device_id: &mut DeviceId) -> CaliptraCmdResult<()>;
+    fn get_device_id(&self, device_id: &mut DeviceId) -> CaliptraCmdResult<()>;
 
     /// Retrieves device information for the given index.
     ///
@@ -136,7 +134,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<()>` - Ok on success, or an error.
-    async fn get_device_info(&self, index: u32, info: &mut DeviceInfo) -> CaliptraCmdResult<()>;
+    fn get_device_info(&self, index: u32, info: &mut DeviceInfo) -> CaliptraCmdResult<()>;
 
     /// Retrieves the device capabilities.
     ///
@@ -145,7 +143,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<()>` - Ok on success, or an error.
-    async fn get_device_capabilities(
+    fn get_device_capabilities(
         &self,
         capabilities: &mut DeviceCapabilities,
     ) -> CaliptraCmdResult<()>;
@@ -160,7 +158,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<usize>` - Number of bytes written on success, or an error.
-    async fn export_attested_csr(
+    fn export_attested_csr(
         &self,
         device_key_id: u32,
         algorithm: u32,
@@ -176,7 +174,7 @@ pub trait CaliptraCmdHandler: Send + Sync {
     ///
     /// # Returns
     /// * `CaliptraCmdResult<usize>` - Number of bytes written on success, or an error.
-    async fn export_idevid_csr(
+    fn export_idevid_csr(
         &self,
         algorithm: u32,
         csr_buf: &mut [u8],
@@ -187,7 +185,6 @@ pub struct AuthorizationError;
 
 pub type AuthorizationResult<T> = Result<T, AuthorizationError>;
 
-#[async_trait(?Send)]
 pub trait CommandAuthorizer {
     /// Validates if a message is authorized.
     ///
@@ -201,7 +198,7 @@ pub trait CommandAuthorizer {
     ///
     /// # Returns
     /// * `Result<&[u8], CommandError>` - Unpacked command or Error
-    async fn is_authorized<'a>(
+    fn is_authorized<'a>(
         &mut self,
         cmd_id: CommandId,
         req: &'a [u8],

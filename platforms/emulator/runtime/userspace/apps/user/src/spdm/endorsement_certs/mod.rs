@@ -6,7 +6,6 @@ mod slot0;
 
 use crate::spdm::cert_store::cert_chain::EndorsementCertChainTrait;
 use alloc::boxed::Box;
-use async_trait::async_trait;
 use caliptra_mcu_libapi_caliptra::certificate::CertContext;
 use caliptra_mcu_libapi_caliptra::crypto::asym::AsymAlgo;
 use caliptra_mcu_libapi_caliptra::crypto::hash::{HashAlgoType, HashContext, SHA384_HASH_SIZE};
@@ -27,12 +26,12 @@ fn init_endorsement_cert_chain(slot_id: u8) -> CertStoreResult<&'static [&'stati
     }
 }
 
-async fn populate_idev_cert() -> CertStoreResult<()> {
+fn populate_idev_cert() -> CertStoreResult<()> {
     let mut cert_ctx = CertContext::new();
 
     while let Err(e) = cert_ctx
         .populate_idev_ecc384_cert(&slot0::SLOT0_ECC_DEVID_CERT_DER)
-        .await
+        
     {
         match e {
             CaliptraApiError::MailboxBusy => continue, // Retry if the mailbox is busy
@@ -44,10 +43,10 @@ async fn populate_idev_cert() -> CertStoreResult<()> {
 }
 
 impl EndorsementCertChain<'_> {
-    pub async fn new(slot_id: u8) -> CertStoreResult<Self> {
+    pub fn new(slot_id: u8) -> CertStoreResult<Self> {
         if slot_id == 0 {
             // populate signed idev cert into the device.
-            populate_idev_cert().await?;
+            populate_idev_cert()?;
         }
 
         let root_cert_chain = init_endorsement_cert_chain(slot_id)?;
@@ -62,7 +61,7 @@ impl EndorsementCertChain<'_> {
 
         let mut root_hash = [0; SHA384_HASH_SIZE];
         while let Err(e) =
-            HashContext::hash_all(HashAlgoType::SHA384, root_cert_chain[0], &mut root_hash).await
+            HashContext::hash_all(HashAlgoType::SHA384, root_cert_chain[0], &mut root_hash)
         {
             match e {
                 CaliptraApiError::MailboxBusy => continue, // Retry if the mailbox is busy
@@ -77,9 +76,8 @@ impl EndorsementCertChain<'_> {
     }
 }
 
-#[async_trait]
 impl EndorsementCertChainTrait for EndorsementCertChain<'_> {
-    async fn root_cert_hash(
+    fn root_cert_hash(
         &self,
         asym_algo: AsymAlgo,
         root_hash: &mut [u8; SHA384_HASH_SIZE],
@@ -91,18 +89,18 @@ impl EndorsementCertChainTrait for EndorsementCertChain<'_> {
         Ok(())
     }
 
-    async fn refresh(&mut self) {
+    fn refresh(&mut self) {
         // No-op for endorsement certs, as they are static
     }
 
-    async fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
+    fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize> {
         if asym_algo != AsymAlgo::EccP384 {
             return Err(CertStoreError::UnsupportedAsymAlgo);
         }
         Ok(self.root_cert_chain_len)
     }
 
-    async fn read(
+    fn read(
         &mut self,
         asym_algo: AsymAlgo,
         offset: usize,

@@ -2,11 +2,10 @@
 
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandResult, SpdmError};
 use crate::protocol::*;
 use crate::state::ConnectionState;
-use crate::transcript::TranscriptContext;
 use bitfield::bitfield;
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -16,7 +15,7 @@ const MAX_SPDM_REQUEST_LENGTH: u16 = 128;
 const MAX_SPDM_EXT_ALG_COUNT_V10: u8 = 8;
 const MAX_SPDM_EXT_ALG_COUNT_V11: u8 = 20;
 
-#[derive(IntoBytes, FromBytes, Immutable, Default)]
+#[derive(IntoBytes, FromBytes, Immutable, Default, Debug)]
 #[repr(C, packed)]
 struct NegotiateAlgorithmsReq {
     num_alg_struct_tables: u8,
@@ -100,7 +99,7 @@ struct ExtendedAlgo {
 
 impl CommonCodec for ExtendedAlgo {}
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum AlgType {
     Dhe = 2,
     AeadCipherSuite = 3,
@@ -125,6 +124,7 @@ bitfield! {
     #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]
     #[repr(C)]
     pub struct AlgStructure(u32);
+    impl Debug;
     u8;
         pub alg_type, set_alg_type: 7, 0;
         pub ext_alg_count, set_ext_alg_count: 11, 8;
@@ -135,7 +135,7 @@ bitfield! {
 
 impl CommonCodec for AlgStructure {}
 
-pub(crate) fn selected_measurement_specification<P: SpdmProvider>(ctx: &SpdmContext<'_, P>) -> MeasurementSpecification {
+pub(crate) fn selected_measurement_specification(ctx: &SpdmContext) -> MeasurementSpecification {
     let local_cap_flags = &ctx.local_capabilities.flags;
     let local_algorithms = &ctx.local_algorithms.device_algorithms;
     let peer_algorithms = ctx.state.connection_info.peer_algorithms();
@@ -155,8 +155,8 @@ pub(crate) fn selected_measurement_specification<P: SpdmProvider>(ctx: &SpdmCont
     measurement_specification_sel
 }
 
-fn process_negotiate_algorithms_request<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn process_negotiate_algorithms_request<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -276,11 +276,11 @@ fn process_negotiate_algorithms_request<'a, P: SpdmProvider>(
         .set_peer_algorithms(peer_algorithms);
 
     // Append NEGOTIATE_ALGORITHMS to the transcript VCA context
-    ctx.append_message_to_transcript_sync(req_payload, TranscriptContext::Vca)
+    ctx.append_message_to_vca_transcript(req_payload)
 }
 
-fn generate_algorithms_response<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_algorithms_response<'a>(
+    ctx: &mut SpdmContext<'a>,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
     let connection_version = ctx.state.connection_info.version_number();
@@ -366,15 +366,15 @@ fn generate_algorithms_response<'a, P: SpdmProvider>(
     payload_len += encode_alg_struct_table(ctx, rsp, num_alg_struct_tables)?;
 
     // Add the ALGORITHMS to the transcript VCA context
-    ctx.append_message_to_transcript_sync(rsp, TranscriptContext::Vca)?;
+    ctx.append_message_to_vca_transcript(rsp)?;
 
     rsp.push_data(payload_len)
         .map_err(|_| ctx.generate_error_response(rsp, ErrorCode::InvalidRequest, 0, None))?;
     Ok(())
 }
 
-fn encode_alg_struct_table<P: SpdmProvider>(
-    ctx: &mut SpdmContext<'_, P>,
+fn encode_alg_struct_table(
+    ctx: &mut SpdmContext,
     rsp: &mut MessageBuf,
     num_alg_struct_tables: usize,
 ) -> CommandResult<usize> {
@@ -465,8 +465,8 @@ fn encode_alg_struct_table<P: SpdmProvider>(
     Ok(len)
 }
 
-pub(crate) fn handle_negotiate_algorithms<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_negotiate_algorithms<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

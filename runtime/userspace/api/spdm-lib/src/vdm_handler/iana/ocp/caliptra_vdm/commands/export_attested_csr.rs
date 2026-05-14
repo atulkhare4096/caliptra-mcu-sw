@@ -20,7 +20,7 @@ struct ExportAttestedCsrReq {
 
 impl CommonCodec for ExportAttestedCsrReq {}
 
-pub(crate) async fn handle_export_attested_csr(
+pub(crate) fn handle_export_attested_csr(
     handler: &dyn CaliptraCmdHandler,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
@@ -41,7 +41,7 @@ pub(crate) async fn handle_export_attested_csr(
     let csr_buf = &mut large_rsp_buf[large_hdr_len..];
     let data_len = match handler
         .export_attested_csr(req.device_key_id, req.algorithm, &req.nonce, csr_buf)
-        .await
+        
     {
         Ok(len) => len,
         Err(e) => return Ok(CaliptraVdmCmdResult::ErrorResponse(e)),

@@ -2,11 +2,10 @@
 
 use crate::codec::{Codec, CommonCodec, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::{SpdmContext, SpdmProvider};
+use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::{ReqRespCode, SpdmMsgHdr, SpdmVersion};
 use crate::state::ConnectionState;
-use crate::transcript::TranscriptContext;
 use bitfield::bitfield;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -53,6 +52,7 @@ bitfield! {
 #[repr(C)]
 #[derive(FromBytes, IntoBytes, Immutable)]
 pub struct VersionNumberEntry(MSB0 [u8]);
+impl Debug;
 u8;
     pub update_ver, set_update_ver: 3, 0;
     pub alpha, set_alpha: 7, 4;
@@ -77,8 +77,8 @@ impl VersionNumberEntry<[u8; VERSION_ENTRY_SIZE]> {
 
 impl CommonCodec for VersionNumberEntry<[u8; VERSION_ENTRY_SIZE]> {}
 
-fn generate_version_response<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn generate_version_response<'a>(
+    ctx: &mut SpdmContext<'a>,
     rsp_buf: &mut MessageBuf<'a>,
     supported_versions: &[SpdmVersion],
 ) -> CommandResult<()> {
@@ -102,8 +102,8 @@ fn generate_version_response<'a, P: SpdmProvider>(
             .map_err(|_| (false, CommandError::BufferTooSmall))?;
     }
 
-    // Append response to VCA transcript
-    ctx.append_message_to_transcript_sync(rsp_buf, TranscriptContext::Vca)?;
+    // Append response to VCA transcript (sync — no hash needed)
+    ctx.append_message_to_vca_transcript(rsp_buf)?;
 
     // Push data offset up by total payload length
     rsp_buf
@@ -112,8 +112,8 @@ fn generate_version_response<'a, P: SpdmProvider>(
     Ok(())
 }
 
-fn process_get_version<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+fn process_get_version<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {
@@ -129,12 +129,12 @@ fn process_get_version<'a, P: SpdmProvider>(
     // Reset Transcript
     ctx.shared_transcript.reset();
 
-    // Append request to VCA transcript
-    ctx.append_message_to_transcript_sync(req_payload, TranscriptContext::Vca)
+    // Append request to VCA transcript (sync — no hash needed)
+    ctx.append_message_to_vca_transcript(req_payload)
 }
 
-pub(crate) fn handle_get_version<'a, P: SpdmProvider>(
-    ctx: &mut SpdmContext<'a, P>,
+pub(crate) fn handle_get_version<'a>(
+    ctx: &mut SpdmContext<'a>,
     spdm_hdr: SpdmMsgHdr,
     req_payload: &mut MessageBuf<'a>,
 ) -> CommandResult<()> {

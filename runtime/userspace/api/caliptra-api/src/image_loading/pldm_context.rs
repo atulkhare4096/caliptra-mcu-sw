@@ -6,8 +6,7 @@ use caliptra_mcu_flash_image::{FlashHeader, ImageHeader};
 use caliptra_mcu_libsyscall_caliptra::dma::AXIAddr;
 
 use caliptra_mcu_pldm_common::message::firmware_update::verify_complete::VerifyResult;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::blocking_mutex::Mutex;
+use caliptra_mcu_libtockasync::blocking::CsMutex as Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
@@ -37,7 +36,7 @@ pub struct DownloadCtx {
     pub load_address: AXIAddr,
 }
 
-pub static DOWNLOAD_CTX: Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> =
+pub static DOWNLOAD_CTX: Mutex<RefCell<DownloadCtx>> =
     Mutex::new(RefCell::new(DownloadCtx {
         total_length: 0,
         current_offset: 0,
@@ -51,5 +50,5 @@ pub static DOWNLOAD_CTX: Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> =
         last_requested_length: 0,
     }));
 
-pub static PLDM_STATE: Mutex<CriticalSectionRawMutex, RefCell<State>> =
+pub static PLDM_STATE: Mutex<RefCell<State>> =
     Mutex::new(RefCell::new(State::NotRunning));

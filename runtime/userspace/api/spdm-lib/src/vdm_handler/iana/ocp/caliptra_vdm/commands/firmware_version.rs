@@ -16,7 +16,7 @@ struct FirmwareVersionReq {
 
 impl CommonCodec for FirmwareVersionReq {}
 
-pub(crate) async fn handle_firmware_version(
+pub(crate) fn handle_firmware_version(
     handler: &dyn CaliptraCmdHandler,
     req_buf: &mut MessageBuf<'_>,
     rsp_buf: &mut MessageBuf<'_>,
@@ -26,7 +26,7 @@ pub(crate) async fn handle_firmware_version(
     let mut version = FirmwareVersion::default();
     match handler
         .get_firmware_version(req.area_index, &mut version)
-        .await
+        
     {
         Ok(()) => {
             let mut len = (CaliptraCompletionCode::Success as u8)

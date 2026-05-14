@@ -7,9 +7,6 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-async-trait.workspace = true
-embassy-executor.workspace = true
-embassy-sync.workspace = true
 caliptra-mcu-common-commands.workspace = true
 caliptra-mcu-libsyscall-caliptra.workspace = true
 caliptra-mcu-libtockasync.workspace = true
@@ -24,5 +21,8 @@ zerocopy.workspace = true
 caliptra-mcu-libtock_unittest.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-embassy-executor = { version = "0.9.1", features = ["arch-riscv32"] }
 embedded-alloc.workspace = true
+
+[features]
+default = []
+debug = []

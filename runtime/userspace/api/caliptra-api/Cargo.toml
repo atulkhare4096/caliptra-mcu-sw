@@ -7,14 +7,11 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
-async-trait.workspace = true
 caliptra-api.workspace = true
 caliptra-auth-man-types.workspace = true
 caliptra-error.workspace = true
 caliptra-ocp-eat.workspace = true
 dpe.workspace = true
-embassy-executor.workspace = true
-embassy-sync.workspace = true
 caliptra-mcu-flash-image.workspace = true
 caliptra-mcu-libtockasync.workspace = true
 caliptra-mcu-libsyscall-caliptra.workspace = true
@@ -30,9 +27,11 @@ zerocopy.workspace = true
 caliptra-mcu-libtock_unittest.workspace = true
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
-embassy-executor = { version = "0.9.1", features = ["arch-riscv32"] }
 embedded-alloc.workspace = true
 
+[features]
+default = []
+debug = ["caliptra-mcu-libsyscall-caliptra/debug"]
 
 [dev-dependencies]
 caliptra-mcu-libtock_unittest.workspace = true

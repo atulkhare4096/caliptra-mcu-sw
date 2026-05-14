@@ -6,6 +6,7 @@ use caliptra_ocp_eat::EatError;
 
 pub type CaliptraApiResult<T> = Result<T, CaliptraApiError>;
 
+#[cfg_attr(feature = "debug", derive(Debug))]
 #[derive(PartialEq)]
 pub enum CaliptraApiError {
     MailboxBusy,
@@ -24,6 +25,8 @@ pub enum CaliptraApiError {
     UnprovisionedCsr,
     Eat(EatError),
 }
+
+#[cfg(not(feature = "debug"))]
 impl core::fmt::Debug for CaliptraApiError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("CaliptraApiError")

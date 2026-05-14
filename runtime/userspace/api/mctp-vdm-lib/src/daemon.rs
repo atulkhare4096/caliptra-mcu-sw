@@ -5,20 +5,15 @@ use caliptra_mcu_libsyscall_caliptra::DefaultSyscalls;
 use caliptra_mcu_libtock_console::Console;
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
-use embassy_executor::Spawner;
 
 /// Maximum size of VDM message buffer (implementation-defined limit).
 pub const MAX_VDM_MSG_SIZE: usize = 1024;
 
 /// VDM Service error types.
+#[derive(Debug)]
 pub enum VdmServiceError {
     StartError,
     StopError,
-}
-impl core::fmt::Debug for VdmServiceError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("VdmServiceError")
-    }
 }
 
 /// Global running flag for the VDM service.
@@ -44,7 +39,6 @@ static VDM_SERVICE_RUNNING: AtomicBool = AtomicBool::new(false);
 /// spawn_vdm_responder(spawner, cmd_interface)?;
 /// ```
 pub fn spawn_vdm_responder(
-    spawner: Spawner,
     cmd_interface: &'static mut CmdInterface<'static>,
 ) -> Result<(), VdmServiceError> {
     if VDM_SERVICE_RUNNING.load(Ordering::SeqCst) {
@@ -53,9 +47,7 @@ pub fn spawn_vdm_responder(
 
     VDM_SERVICE_RUNNING.store(true, Ordering::SeqCst);
 
-    spawner
-        .spawn(vdm_responder_task(cmd_interface, &VDM_SERVICE_RUNNING))
-        .map_err(|_| VdmServiceError::StartError)?;
+    vdm_responder_task(cmd_interface, &VDM_SERVICE_RUNNING);
 
     Ok(())
 }
@@ -73,22 +65,21 @@ pub fn is_vdm_service_running() -> bool {
 }
 
 /// VDM responder task.
-#[embassy_executor::task]
-pub async fn vdm_responder_task(
+pub fn vdm_responder_task(
     cmd_interface: &'static mut CmdInterface<'static>,
     running: &'static AtomicBool,
 ) {
-    vdm_responder(cmd_interface, running).await;
+    vdm_responder(cmd_interface, running);
 }
 
 /// VDM responder loop.
-pub async fn vdm_responder(
+pub fn vdm_responder(
     cmd_interface: &'static mut CmdInterface<'static>,
     running: &'static AtomicBool,
 ) {
     let mut msg_buffer = [0u8; MAX_VDM_MSG_SIZE];
     while running.load(Ordering::SeqCst) {
-        if let Err(e) = cmd_interface.handle_responder_msg(&mut msg_buffer).await {
+        if let Err(e) = cmd_interface.handle_responder_msg(&mut msg_buffer) {
             // Debug print on error
             writeln!(
                 Console::<DefaultSyscalls>::writer(),

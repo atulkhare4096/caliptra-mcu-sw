@@ -12,7 +12,7 @@ pub const OCP_VENDOR_ID: u32 = 42623; // 0xA67F
 pub const CALIPTRA_VDM_COMMAND_VERSION: u8 = 0x01;
 
 /// Caliptra VDM command codes as defined in the OCP registry.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CaliptraVdmCommand {
     FirmwareVersion = 0x01,
@@ -68,7 +68,7 @@ impl CaliptraVdmCommand {
 }
 
 /// Caliptra VDM message header: [command_version, command_code].
-#[derive(FromBytes, IntoBytes, Immutable)]
+#[derive(FromBytes, IntoBytes, Immutable, Debug)]
 #[repr(C)]
 pub struct CaliptraVdmMsgHeader {
     pub command_version: u8,
@@ -98,6 +98,7 @@ impl CaliptraVdmMsgHeader {
 }
 
 /// Result type for individual command handlers.
+#[derive(Debug)]
 pub enum CaliptraVdmCmdResult {
     Response(usize),
     ErrorResponse(CaliptraCompletionCode),
