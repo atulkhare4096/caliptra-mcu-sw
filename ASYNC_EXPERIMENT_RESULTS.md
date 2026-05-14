@@ -260,6 +260,111 @@ regular `fn` while keeping transport async — the hybrid architecture.
 
 ---
 
+## Hybrid vs. Fully Sync: Ergonomics and Maintenance
+
+### Task-level architecture comparison
+
+```mermaid
+graph TD
+    subgraph hybrid["Hybrid: async transport + sync handlers"]
+        direction TB
+        executor["Embassy Executor<br/>(scheduler built-in)"]
+        executor --> spdm_h["spdm_task async fn<br/>receive().await<br/>dispatch() — sync<br/>send().await"]
+        executor --> pldm_h["pldm_task async fn<br/>receive().await<br/>handle() — sync<br/>send().await"]
+        executor --> vdm_h["vdm_task async fn<br/>receive().await<br/>handle() — sync"]
+    end
+
+    subgraph fully_sync["Fully Sync: manual scheduler"]
+        direction TB
+        main_loop["fn main_loop<br/>YOU are the scheduler"]
+        main_loop --> poll_spdm["if try_receive_spdm()<br/>  spdm_dispatch()"]
+        main_loop --> poll_pldm["if try_receive_pldm()<br/>  pldm_dispatch()"]
+        main_loop --> poll_vdm["if try_receive_vdm()<br/>  vdm_dispatch()"]
+        main_loop --> yield["yield_wait()"]
+    end
+
+    style hybrid fill:#d5f5e3
+    style fully_sync fill:#fadbd8
+    style executor fill:#4ecdc4,color:#fff
+    style main_loop fill:#ff6b6b,color:#fff
+```
+
+### Code comparison
+
+```rust
+// ── HYBRID MODEL (current) ──────────────────────────────
+// Each task is self-contained — embassy handles multiplexing
+
+#[embassy_executor::task]
+async fn spdm_task() {
+    loop {
+        let msg = transport.receive().await;  // yield to other tasks
+        dispatch_request(&msg);                // sync handlers (plain fn)
+        transport.send(&resp).await;           // yield to other tasks
+    }
+}
+
+#[embassy_executor::task]
+async fn pldm_task() { /* same pattern — isolated, independent */ }
+
+#[embassy_executor::task]
+async fn vdm_task()  { /* same pattern — isolated, independent */ }
+
+
+// ── FULLY SYNC MODEL ────────────────────────────────────
+// One big loop — you manually interleave all subsystems
+
+fn main_loop() {
+    loop {
+        // Manual round-robin polling — you are the scheduler
+        if let Some(msg) = mctp.try_receive_spdm() {
+            spdm_dispatch(&msg);
+            mctp.send_spdm(&resp);
+        }
+        if let Some(msg) = mctp.try_receive_pldm() {
+            pldm_dispatch(&msg);
+        }
+        if let Some(cmd) = mcu_mbox.try_receive() {
+            vdm_dispatch(&cmd);
+        }
+        yield_wait();  // back to kernel
+    }
+}
+```
+
+### Maintenance comparison
+
+| Aspect | Hybrid (async transport) | Fully sync |
+|---|---|---|
+| **Handler code** | Plain `fn` — identical | Plain `fn` — identical |
+| **Adding a new task** | Add one `#[embassy_executor::task] async fn` | Modify `main_loop`, add polling branch, manage ordering |
+| **Task isolation** | Complete — tasks can't interfere | Coupled — all in one loop, shared control flow |
+| **Scheduling bugs** | Impossible — embassy handles it | Possible — wrong poll order, starvation, forgotten yield |
+| **Testing tasks** | Each task testable in isolation | Must test the whole loop |
+| **Code size overhead** | ~1–2KB (executor + 2 awaits/task) | 0 (but manual scheduler code offsets this) |
+| **Upstream Tock ecosystem** | Aligned — embassy is the standard | Non-standard — custom scheduler |
+
+### Verdict: Hybrid is strictly better for maintenance
+
+The handler code (40+ files, all SPDM commands, crypto, certs, transcripts) is
+**identical** in both models — plain `fn`, no `.await`, same signatures. The only
+difference is at the task boundary (2–3 files).
+
+The hybrid model wins on maintenance because:
+1. **Task isolation** — each subsystem is a self-contained loop. Adding SPDM-over-DOE
+   meant adding one new `async fn`, not threading another branch into a monolithic loop.
+2. **No scheduling bugs** — embassy guarantees fair round-robin. A fully sync loop
+   requires manual discipline to avoid starvation (e.g., a long SPDM handler blocking
+   PLDM polling).
+3. **Upstream alignment** — embassy-executor is the standard Tock/embedded-Rust async
+   runtime. Fully sync means maintaining a custom scheduler that future contributors
+   must understand.
+4. **Negligible cost** — async transport adds ~1–2KB vs. the manual scheduler code you'd
+   write anyway. The 49KB savings come entirely from making *handlers* sync, which both
+   models do.
+
+---
+
 ## Implementation Plan
 
 ```mermaid
