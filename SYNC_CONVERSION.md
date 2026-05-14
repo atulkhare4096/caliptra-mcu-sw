@@ -19,12 +19,12 @@ heap-allocated futures.
 
 | Section | Before (async) | After (sync) | Δ Bytes | Δ % |
 |---------|---------------:|-------------:|--------:|----:|
-| `.text` | 144,346 | 90,594 | −53,752 | −37.2% |
-| `.rodata` | 26,876 | 17,400 | −9,476 | −35.3% |
+| `.text` | 144,346 | 90,936 | −53,410 | −37.0% |
+| `.rodata` | 26,876 | 17,380 | −9,496 | −35.3% |
 | `.data` | 60 | 32 | −28 | −46.7% |
-| `.bss` | 60,056 | 30,920 | −29,136 | −48.5% |
+| `.bss` | 60,056 | 31,960 | −28,096 | −46.8% |
 | `.stack` | 44,544 | 44,544 | 0 | 0% |
-| **Flash total** | **171,282** | **107,994** | **−63,288** | **−36.9%** |
+| **Flash total** | **171,282** | **108,348** | **−62,934** | **−36.7%** |
 
 All Embassy runtime dependencies (`embassy-executor`, `embassy-sync`,
 `async-trait`) have been completely eliminated from the production binary.
