@@ -62,6 +62,111 @@ pub(crate) fn spdm_task() {
     spdm_mctp_responder();
 }
 
+/// Async SPDM task for the hybrid architecture.
+///
+/// Transport (receive/send) is async — yields to the embassy executor so other
+/// tasks (PLDM, VDM, MCU Mbox) can run while waiting for MCTP messages.
+/// All SPDM command handlers remain plain sync `fn` — no state machine overhead.
+pub(crate) async fn spdm_async_task() {
+    let mut cw = Console::<DefaultSyscalls>::writer();
+    writeln!(cw, "SPDM_TASK: Running SPDM-TASK (hybrid async)...").unwrap();
+
+    shared_large_msg_buf::init();
+
+    if let Err(e) = initialize_cert_store() {
+        writeln!(cw, "SPDM_TASK: Failed to initialize certificate store: {:?}", e).unwrap();
+        return;
+    }
+
+    #[cfg(not(feature = "pcr-quote-measurements"))]
+    init_target_env_claims();
+
+    // Raw MCTP driver for async receive
+    let mctp_raw: mctp::Mctp<DefaultSyscalls> = mctp::Mctp::new(mctp::driver_num::MCTP_SPDM);
+
+    // Receive buffer — shared with the kernel during async receive
+    let mut recv_buf = [0u8; MAX_SPDM_RESPONDER_BUF_SIZE];
+    let mut raw_buffer = [0u8; MAX_SPDM_RESPONDER_BUF_SIZE];
+    let mut mctp_spdm_transport = MctpTransport::new(mctp::driver_num::MCTP_SPDM);
+
+    let max_mctp_spdm_msg_size =
+        (MAX_SPDM_RESPONDER_BUF_SIZE - mctp_spdm_transport.header_size()) as u32;
+
+    let local_capabilities = DeviceCapabilities {
+        ct_exponent: CALIPTRA_SPDM_CT_EXPONENT,
+        flags: CapabilityFlags::default(),
+        data_transfer_size: max_mctp_spdm_msg_size,
+        max_spdm_msg_size: shared_large_msg_buf::LARGE_MSG_BUF_SIZE as u32,
+    };
+    let local_algorithms = LocalDeviceAlgorithms::default();
+    let shared_cert_store = SharedCertStore::new();
+
+    #[cfg(not(feature = "pcr-quote-measurements"))]
+    let (mut device_manifest, meas_value_info) =
+        device_measurements::ocp_eat::create_manifest_with_ocp_eat();
+    #[cfg(feature = "pcr-quote-measurements")]
+    let (mut device_manifest, meas_value_info) =
+        device_measurements::pcr_quote::create_manifest_with_pcr_quote();
+
+    let device_measurements = SpdmMeasurements::new(&meas_value_info, &mut device_manifest);
+
+    let caliptra_cmd_handler = crate::caliptra_cmd_handler::CaliptraCmdBackend;
+    let mut caliptra_vdm_handler =
+        caliptra_mcu_spdm_lib::vdm_handler::iana::ocp::caliptra_vdm::CaliptraVdmHandler::new(
+            &caliptra_cmd_handler,
+        );
+    let mut handlers_array: [&mut dyn caliptra_mcu_spdm_lib::vdm_handler::VdmHandler; 1] =
+        [&mut caliptra_vdm_handler as &mut dyn caliptra_mcu_spdm_lib::vdm_handler::VdmHandler];
+    let vdm_handlers: Option<&mut [&mut dyn caliptra_mcu_spdm_lib::vdm_handler::VdmHandler]> =
+        Some(&mut handlers_array);
+
+    let large_msg_buf_provider = shared_large_msg_buf::SharedLargeMsgBuf::new();
+
+    let mut ctx = match SpdmContext::new(
+        SPDM_VERSIONS,
+        SECURE_SPDM_VERSIONS,
+        &mut mctp_spdm_transport,
+        local_capabilities,
+        local_algorithms,
+        &shared_cert_store,
+        device_measurements,
+        vdm_handlers,
+        &large_msg_buf_provider,
+    ) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            writeln!(cw, "SPDM_ASYNC: Failed to create context: {:?}", e).unwrap();
+            return;
+        }
+    };
+
+    let mut msg_buffer = MessageBuf::new(&mut raw_buffer);
+
+    // Hybrid async task loop:
+    // 1. Await MCTP receive (yields to executor — other tasks can run)
+    // 2. Sync dispatch + sync send (no state machine overhead)
+    loop {
+        // ASYNC: yield to executor while waiting for a message
+        let upcall_args = match mctp_raw.receive_request_async(&mut recv_buf).await {
+            Ok(args) => args,
+            Err(e) => {
+                writeln!(cw, "SPDM_ASYNC: receive error: {:?}", e).unwrap();
+                continue;
+            }
+        };
+
+        // SYNC: dispatch request and send response (all handlers are plain fn)
+        match ctx.process_received(&mut msg_buffer, &recv_buf, upcall_args) {
+            Ok(()) => {
+                writeln!(cw, "SPDM_ASYNC: message handled").unwrap();
+            }
+            Err(e) => {
+                writeln!(cw, "SPDM_ASYNC: error: {:?}", e).unwrap();
+            }
+        }
+    }
+}
+
 /// Non-blocking notification for the SPDM MCTP responder.
 static SPDM_MCTP_NOTIFY: UpcallNotification = UpcallNotification::new();
 

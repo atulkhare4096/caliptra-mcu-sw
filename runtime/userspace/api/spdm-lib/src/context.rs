@@ -87,6 +87,24 @@ impl<'a> SpdmContext<'a> {
         self.handle_received_message(msg_buf, secure)
     }
 
+    /// Process a message that has already been received into a buffer.
+    ///
+    /// Used by the hybrid async task: the caller does async receive into
+    /// `nb_buf`, then calls this with the upcall args to dispatch and send
+    /// the response synchronously.
+    pub fn process_received(
+        &mut self,
+        msg_buf: &mut MessageBuf<'a>,
+        nb_buf: &[u8],
+        upcall_args: (u32, u32, u32),
+    ) -> SpdmResult<()> {
+        let secure = self
+            .transport
+            .receive_from_buffer(msg_buf, nb_buf, upcall_args)
+            .map_err(SpdmError::Transport)?;
+        self.handle_received_message(msg_buf, secure)
+    }
+
     /// Non-blocking poll: check for a pending message and handle it if ready.
     ///
     /// `nb_buf` must be the buffer passed to `MctpTransport::setup_non_blocking()`.
@@ -117,7 +135,7 @@ impl<'a> SpdmContext<'a> {
     }
 
     /// Process a message that has already been received into `msg_buf`.
-    fn handle_received_message(
+    pub fn handle_received_message(
         &mut self,
         msg_buf: &mut MessageBuf<'a>,
         secure: bool,

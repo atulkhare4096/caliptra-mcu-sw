@@ -11,12 +11,20 @@ behavioral trade-offs and better maintainability than a fully sync alternative.
 | Configuration | .text | .rodata | .data | .bss | Flash |
 |---|---|---|---|---|---|
 | **Original** (fully async) | 132,858 | 18,040 | 60 | 48,944 | 150,958 |
-| **Hybrid** (async transport + sync handlers) | 83,040 | 10,884 | 32 | 31,960 | 93,956 |
+| **Hybrid** (async transport + sync handlers) | 85,414 | 11,540 | 32 | 35,952 | 96,986 |
 | **Fully sync** (reference) | 83,040 | 10,884 | 32 | 31,960 | 93,956 |
-| **Savings vs. original** | -49,818 | -7,156 | -28 | -16,984 | **-57,002 (-37.8%)** |
+| **Savings vs. original** | -47,444 | -6,500 | -28 | -12,992 | **-53,972 (-35.8%)** |
+| **Hybrid overhead vs. sync** | +2,374 | +656 | 0 | +3,992 | **+3,030 (+3.2%)** |
 
-The hybrid and fully sync architectures produce **identical binaries** — the async
-transport shell (embassy executor, 2 await points per task) adds no measurable overhead.
+The hybrid architecture adds **3,030 bytes (3.2%)** over the fully-sync baseline. This
+overhead comes from:
+- Embassy executor task infrastructure (~1.5 KB .text)
+- Async `Future` state machines for transport receive/send (~0.9 KB .text)
+- TockSubscribe future combinators and share::scope async wrappers (~0.6 KB .rodata)
+
+In exchange, the hybrid provides **cooperative multitasking** — the executor can run
+other tasks (PLDM, VDM, MCU Mbox) while waiting for MCTP messages, without requiring
+a hand-written polling loop.
 
 ## The Problem: Async State Machines in Handlers
 
@@ -173,7 +181,7 @@ This is safe because Tock userspace is single-threaded and cooperative.
 
 The hybrid and fully sync models produce identical handler code (40+ files, all SPDM
 commands, crypto, certs, transcripts — plain `fn`, no `.await`). The only difference
-is at the task boundary (2–3 files):
+is at the task boundary (2–3 files), which costs **3,030 bytes (3.2%)** of flash:
 
 ### Task-level architecture
 
@@ -250,19 +258,21 @@ fn main_loop() {
 | Aspect | Hybrid (async transport) | Fully sync |
 |---|---|---|
 | **Handler code** | Plain `fn` — identical | Plain `fn` — identical |
-| **Binary size** | Identical | Identical |
+| **Binary size** | +3,030 bytes (+3.2%) | Baseline |
 | **Adding a new task** | Add one `#[embassy_executor::task] async fn` | Modify `main_loop`, add polling branch, manage ordering |
 | **Task isolation** | Complete — tasks can't interfere | Coupled — all in one loop, shared control flow |
 | **Scheduling bugs** | Impossible — embassy handles it | Possible — wrong poll order, starvation, forgotten yield |
 | **Testing tasks** | Each task testable in isolation | Must test the whole loop |
-| **Code size overhead** | ~1–2KB (executor + 2 awaits/task) | 0 (but manual scheduler code offsets this) |
+| **Code size overhead** | ~3KB (executor + async transport wrappers) | 0 (but manual scheduler code offsets this) |
 | **Upstream Tock ecosystem** | Aligned — embassy is the standard | Non-standard — custom scheduler |
 
 ### Verdict
 
-The hybrid model is strictly better: identical binary size, identical handler code,
-but with task isolation, no scheduling bugs, isolated testability, and upstream
-alignment — for ~1–2KB of overhead that manual scheduler code would offset anyway.
+The hybrid model is strictly better: **3KB (3.2%)** overhead for task isolation, no
+scheduling bugs, isolated testability, and upstream alignment. The fully-async model's
+57KB bloat came entirely from async *handlers* (state machines for Caliptra mailbox
+round-trips that complete in microseconds). The hybrid eliminates that bloat while
+retaining async transport for genuine I/O waiting.
 
 ---
 

@@ -1,8 +1,10 @@
 // Licensed under the Apache-2.0 license
 
 use crate::DefaultSyscalls;
-use caliptra_mcu_libtock_platform::{ErrorCode, Syscalls};
+use caliptra_mcu_libtock_platform::share;
+use caliptra_mcu_libtock_platform::{DefaultConfig, ErrorCode, Syscalls};
 use caliptra_mcu_libtockasync::blocking::{self, UpcallNotification};
+use caliptra_mcu_libtockasync::TockSubscribe;
 use core::marker::PhantomData;
 
 type EndpointId = u8;
@@ -190,6 +192,82 @@ impl<S: Syscalls> Mctp<S> {
             driver_num::MCTP_PLDM => Ok(1),
             driver_num::MCTP_CALIPTRA => Ok(0x7E),
             _ => Err(ErrorCode::Invalid)?,
+        }
+    }
+
+    // =========================================================================
+    // Async API (for hybrid architecture — async transport, sync handlers)
+    // =========================================================================
+
+    /// Async receive that yields to the embassy executor while waiting for a
+    /// message. Returns the raw upcall args `(recv_len, 0, msg_info_raw)` so
+    /// the caller can pass them to `SpdmContext::process_received()`.
+    ///
+    /// Data is written into `req` by the kernel. The caller should pass the
+    /// same `req` as `nb_buf` to `process_received`.
+    pub async fn receive_request_async(&self, req: &mut [u8]) -> Result<(u32, u32, u32), ErrorCode> {
+        if req.is_empty() {
+            return Err(ErrorCode::Invalid);
+        }
+
+        let result = share::scope::<(), _, _>(|_handle| {
+            let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
+                self.driver_num,
+                subscribe::RECEIVED_REQUEST,
+                allow_rw::READ_REQUEST,
+                req,
+            );
+
+            if let Err(e) = S::command(self.driver_num, command::RECEIVE_REQUEST, 0, 0)
+                .to_result::<(), ErrorCode>()
+            {
+                sub.cancel();
+                Err(e)?;
+            }
+
+            Ok(TockSubscribe::subscribe_finish(sub))
+        })?
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Async version of send_response. Yields to the embassy executor while
+    /// waiting for transmission to complete.
+    pub async fn send_response_async(&self, resp: &[u8], info: MessageInfo) -> Result<(), ErrorCode> {
+        let max_size = self.max_message_size()? as usize;
+
+        if resp.is_empty() || resp.len() > max_size {
+            return Err(ErrorCode::Invalid);
+        }
+
+        let (result, _, _) = share::scope::<(), _, _>(|_handle| {
+            let mut ro_sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
+                self.driver_num,
+                subscribe::MESSAGE_TRANSMITTED,
+                allow_ro::MESSAGE_WRITE,
+                resp,
+            );
+
+            if let Err(e) = S::command(
+                self.driver_num,
+                command::SEND_RESPONSE,
+                info.eid as u32,
+                (info.tag & 0x7) as u32,
+            )
+            .to_result::<(), ErrorCode>()
+            {
+                ro_sub.cancel();
+                Err(e)?;
+            }
+
+            Ok(TockSubscribe::subscribe_finish(ro_sub))
+        })?
+        .await?;
+
+        match result {
+            0 => Ok(()),
+            _ => Err(result.try_into().unwrap_or(ErrorCode::Fail)),
         }
     }
 

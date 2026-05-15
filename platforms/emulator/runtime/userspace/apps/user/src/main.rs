@@ -64,43 +64,53 @@ fn start() {
         #[allow(static_mut_refs)]
         caliptra_mcu_romtime::set_printer(&mut EMULATOR_WRITER);
     }
-    async_main();
-}
-
-pub(crate) fn async_main() {
-    // Boot-time operations (run to completion)
+    // Boot-time operations (run to completion, before executor starts)
     image_loader::image_loading_task();
 
-    // Initialize MCU Mbox for cooperative polling (if test features enabled)
+    // When MCU mbox test features are enabled, use the cooperative polling loop
+    // so mbox commands are serviced alongside SPDM.
     #[cfg(any(
         feature = "test-mcu-mbox-cmds",
         feature = "test-mcu-mbox-fips-self-test",
         feature = "test-mcu-mbox-fips-periodic",
         feature = "test-caliptra-util-host-validator"
     ))]
-    let mbox_enabled = mcu_mbox::init_polling();
+    {
+        let mbox_enabled = mcu_mbox::init_polling();
 
-    // Runtime: cooperative service loop.
-    // SPDM hosts the loop and calls poll_others() on each iteration
-    // so other services can make progress concurrently.
+        #[cfg(not(any(
+            feature = "test-firmware-update-streaming",
+            feature = "test-firmware-update-flash"
+        )))]
+        spdm::spdm_cooperative_main(&mut || {
+            if mbox_enabled {
+                mcu_mbox::poll_one();
+            }
+        });
+
+        #[cfg(feature = "test-mcu-mbox-fips-periodic")]
+        caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task();
+    }
+
+    // Otherwise, use the hybrid async architecture with embassy executor.
+    #[cfg(not(any(
+        feature = "test-mcu-mbox-cmds",
+        feature = "test-mcu-mbox-fips-self-test",
+        feature = "test-mcu-mbox-fips-periodic",
+        feature = "test-caliptra-util-host-validator"
+    )))]
+    caliptra_mcu_libtockasync::start_async(async_main());
+}
+
+#[embassy_executor::task]
+async fn async_main() {
+    // Runtime: SPDM async task — yields to executor on transport I/O,
+    // all command handlers are sync (no state machine overhead).
     #[cfg(not(any(
         feature = "test-firmware-update-streaming",
         feature = "test-firmware-update-flash"
     )))]
-    spdm::spdm_cooperative_main(&mut || {
-        #[cfg(any(
-            feature = "test-mcu-mbox-cmds",
-            feature = "test-mcu-mbox-fips-self-test",
-            feature = "test-mcu-mbox-fips-periodic",
-            feature = "test-caliptra-util-host-validator"
-        ))]
-        if mbox_enabled {
-            mcu_mbox::poll_one();
-        }
-    });
-
-    #[cfg(feature = "test-mcu-mbox-fips-periodic")]
-    caliptra_mcu_mbox_lib::fips_periodic::fips_periodic_task();
+    spdm::spdm_async_task().await;
 
     #[cfg(any(
         feature = "test-mctp-vdm-cmds",

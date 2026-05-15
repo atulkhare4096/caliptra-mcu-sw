@@ -5453,6 +5453,7 @@ dependencies = [
  "caliptra-ocp-eat",
  "constant_time_eq 0.4.2",
  "critical-section",
+ "embassy-executor",
  "embedded-alloc",
  "portable-atomic",
  "static_cell",
